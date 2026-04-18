@@ -18,6 +18,10 @@ __pycache__/
 *.qgz
 *.qgs
 
+# Logs
+logs/*
+!logs/.gitkeep
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
