@@ -1,3 +1,23 @@
+# Large data files
+data/raw/
+data/processed/
+*.laz
+*.las
+*.tif
+*.tiff
+
+# Keep outputs but not large rasters
+outputs/maps/*.tif
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# QGIS
+*.qgz
+*.qgs
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

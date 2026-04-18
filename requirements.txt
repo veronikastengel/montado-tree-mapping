@@ -1,0 +1,11 @@
+laspy[lazrs]
+scikit-image
+numpy<2
+scipy
+shapely
+gdal
+geopandas
+matplotlib
+seaborn
+jupyter
+notebook
