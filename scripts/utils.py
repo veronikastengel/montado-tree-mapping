@@ -5,7 +5,7 @@ from datetime import datetime
 def get_logger(script_name):
     os.makedirs("logs", exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = os.path.join("logs", f"{script_name}_{timestamp}.log")
+    log_path = os.path.join("logs", f"{timestamp}_{script_name}.log")
 
     logger = logging.getLogger(script_name)
     logger.setLevel(logging.DEBUG)
