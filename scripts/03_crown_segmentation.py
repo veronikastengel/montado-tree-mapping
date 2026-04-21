@@ -35,7 +35,7 @@ from utils import get_logger
 BASE_DIR         = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INPUT_NDSM       = os.path.join(BASE_DIR, "data", "processed", "nDSM.tif")
 INPUT_MASK       = os.path.join(BASE_DIR, "data", "processed", "vegetation_mask.tif")
-INPUT_TREETOPS   = os.path.join(BASE_DIR, "data", "processed", "treetops.gpkg")
+INPUT_TREETOPS   = os.path.join(BASE_DIR, "data", "processed", "treetops.gpkg") #treetops.gpkg or treetops_lidar.gpkg
 OUTPUT_DIR       = os.path.join(BASE_DIR, "data", "processed")
 OUTPUT_CROWNS_GPKG = os.path.join(OUTPUT_DIR, "crowns.gpkg")
 # ============================================================
