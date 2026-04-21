@@ -22,6 +22,7 @@ Usage:
 Arguments:
     --crowns-layer    name of layer inside crowns.gpkg to enrich
                       (default: uses first layer found)
+    --edge-buffer     Distance in metres from raster edge to flag crown as is_edge (default: 1.0)
 """
 
 import os
@@ -56,6 +57,12 @@ def parse_args():
         default=None,
         help="Layer name inside crowns.gpkg to enrich. If not specified, uses first layer found."
     )
+    parser.add_argument(
+        "--edge-buffer",
+        type=float,
+        default=1.0,
+        help="Distance in metres from raster edge to flag crown as is_edge (default: 1.0)"
+    )
     return parser.parse_args()
 
 
@@ -74,6 +81,26 @@ def find_laz_files(directory, logger):
     for f in files:
         logger.info(f"    {os.path.basename(f)}")
     return files
+
+
+def get_raster_extent(raster_path, logger):
+    """Get geographic extent of raster as (x_min, x_max, y_min, y_max)."""
+    ds   = gdal.Open(raster_path)
+    if ds is None:
+        msg = f"Cannot open raster: {raster_path}"
+        logger.error(msg)
+        raise FileNotFoundError(msg)
+    gt   = ds.GetGeoTransform()
+    cols = ds.RasterXSize
+    rows = ds.RasterYSize
+    ds   = None
+    x_min = gt[0]
+    x_max = gt[0] + cols * gt[1]
+    y_max = gt[3]
+    y_min = gt[3] + rows * gt[5]
+    logger.info(f"  Raster extent: ({x_min:.1f}, {y_min:.1f}) - "
+                f"({x_max:.1f}, {y_max:.1f})")
+    return x_min, x_max, y_min, y_max
 
 
 def load_crowns_layer(gpkg_path, layer_name, logger):
@@ -182,6 +209,7 @@ def load_point_cloud(laz_paths, logger):
     return (xs_all, ys_all, classification,
             xs, ys, zs, intensity, ndvi, ret_number, n_returns)
 
+
 def build_spatial_index(xs, ys, cell_size=50.0, logger=None):
     """
     Build a simple grid spatial index for fast point lookup.
@@ -229,6 +257,7 @@ def query_spatial_index(index, x_min, y_min, cell_size,
     if candidates:
         return np.concatenate(candidates)
     return np.array([], dtype=int)
+
 
 def normalize_heights(xs, ys, zs, dtm_path, logger):
     """Subtract DTM elevation at each point to get height above ground."""
@@ -284,6 +313,7 @@ def add_fields(layer, logger):
     add("n_points",           ogr.OFTInteger)
     add("n_points_all",       ogr.OFTInteger)
     add("pct_high_veg",       ogr.OFTReal)
+    add("is_edge", ogr.OFTInteger)  # 1 = touches raster edge, 0 = interior
     logger.info("  Fields ready.")
 
 
@@ -309,7 +339,7 @@ def compute_vertical_distribution(z_vals):
 
 def process_crowns(layer, xs_all, ys_all,
                    xs, ys, zs_norm, good,
-                   intensity, ndvi, logger):
+                   intensity, ndvi, raster_extent, edge_buffer, logger):
     """
     Iterate over crown polygons, compute metrics from points inside each,
     write results back to GeoPackage layer.
@@ -326,10 +356,10 @@ def process_crowns(layer, xs_all, ys_all,
 
     # Build spatial indices
     logger.info("Building spatial indices...")
-    idx_veg, xmin_v, ymin_v, cs_v = build_spatial_index(
+    sidx_veg, xmin_v, ymin_v, cs_v = build_spatial_index(
         xs_v, ys_v, cell_size=50.0, logger=logger
     )
-    idx_all, xmin_a, ymin_a, cs_a = build_spatial_index(
+    sidx_all, xmin_a, ymin_a, cs_a = build_spatial_index(
         xs_all, ys_all, cell_size=50.0, logger=logger
     )
 
@@ -344,11 +374,20 @@ def process_crowns(layer, xs_all, ys_all,
             continue
 
         xmin, xmax, ymin, ymax = geom.GetEnvelope()
+        # Edge detection
+        rx_min, rx_max, ry_min, ry_max = raster_extent
+        is_edge_crown = int(
+            xmin <= rx_min + edge_buffer or
+            xmax >= rx_max - edge_buffer or
+            ymin <= ry_min + edge_buffer or
+            ymax >= ry_max - edge_buffer
+        )
+        feature.SetField("is_edge", is_edge_crown)
 
         # Use Index for pre-filter
-        cands     = query_spatial_index(idx_veg, xmin_v, ymin_v, cs_v,
+        cands     = query_spatial_index(sidx_veg, xmin_v, ymin_v, cs_v,
                                 xmin, xmax, ymin, ymax)
-        cands_all = query_spatial_index(idx_all, xmin_a, ymin_a, cs_a,  
+        cands_all = query_spatial_index(sidx_all, xmin_a, ymin_a, cs_a,  
                                 xmin, xmax, ymin, ymax)
 
         if len(cands) == 0 and len(cands_all) == 0:
@@ -449,6 +488,9 @@ if __name__ == "__main__":
         # 3 Normalize heights using DTM
         zs_norm, good = normalize_heights(xs, ys, zs, INPUT_DTM, logger)
 
+        logger.info("Getting raster extent for edge detection...")
+        raster_extent = get_raster_extent(INPUT_DTM, logger)
+
         # 4 Add fields to layer
         add_fields(layer, logger)
 
@@ -457,7 +499,8 @@ if __name__ == "__main__":
             layer,
             xs_all, ys_all,
             xs, ys, zs_norm, good,
-            intensity, ndvi,
+            intensity, ndvi, 
+            raster_extent, args.edge_buffer,
             logger
         )
 
