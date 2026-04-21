@@ -35,7 +35,6 @@ RAW_DATA_DIR   = r"data\raw"
 OUTPUT_DIR     = r"data\processed"
 MDS_PATTERN    = "MDS-50cm-*.tif"
 MDT_PATTERN    = "MDT-50cm-*.tif"
-LAZ_PATTERN  = "*.laz"
 OUTPUT_MDS     = "MDS_merged.tif"
 OUTPUT_MDT     = "MDT_merged.tif"
 OUTPUT_NDSM    = "nDSM.tif"
@@ -66,6 +65,22 @@ def find_files(directory, pattern):
         logger.error(msg)
         raise FileNotFoundError(msg)
     logger.info(f"  Found {len(files)} files for pattern '{pattern}':")
+    for f in files:
+        logger.info(f"    {os.path.basename(f)}")
+    return files
+
+def find_laz_files(directory, logger):
+    """Find all LAZ files in directory."""
+    import glob
+    files = sorted([
+        f for f in glob.glob(os.path.join(directory, "*.laz"))
+        if ".copc." not in f
+    ])
+    if not files:
+        msg = f"No LAZ files found in {directory}"
+        logger.error(msg)
+        raise FileNotFoundError(msg)
+    logger.info(f"  Found {len(files)} LAZ files:")
     for f in files:
         logger.info(f"    {os.path.basename(f)}")
     return files
@@ -337,7 +352,7 @@ if __name__ == "__main__":
         logger.info("\nLocating input tiles...")
         mds_tiles = find_files(RAW_DATA_DIR, MDS_PATTERN)
         mdt_tiles = find_files(RAW_DATA_DIR, MDT_PATTERN)
-        laz_files = find_files(RAW_DATA_DIR, LAZ_PATTERN)
+        laz_files = find_laz_files(RAW_DATA_DIR)
 
         # 2 Merge
         logger.info("\nMerging tiles...")

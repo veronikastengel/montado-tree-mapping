@@ -13,6 +13,9 @@ Arguments:
     --compactness       float, watershed compactness parameter (default: 0.001)
                         lower = follow height contours, higher = rounder segments
     --minheight         float, minimum height for vegetation mask (default: 2.0)
+    --min-area          float, polygons at or below this area in m2 are either
+                        merged into a single touching neighbour or removed (default: 1.0)
+
 """
 
 import os
@@ -21,6 +24,7 @@ import argparse
 import numpy as np
 from osgeo import gdal, ogr, osr
 from skimage.segmentation import watershed
+from scipy.ndimage import binary_fill_holes
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from utils import get_logger
@@ -60,6 +64,13 @@ def parse_args():
         type=float,
         default=2.0,
         help="Minimum height in metres for vegetation mask (default: 2.0)"
+    )
+    parser.add_argument(
+        "--min-area",
+        type=float,
+        default=1.0,
+        help="Polygons at or below this area in m2 are merged into a single "
+             "touching neighbour or removed if isolated (default: 1.0)"
     )
     return parser.parse_args()
 
@@ -162,11 +173,7 @@ def rasterize_treetops(layer, gt, proj, rows, cols, logger):
 
 
 def run_watershed(ndsm, seeds, veg_mask, compactness, logger):
-    """
-    Run marker-controlled watershed on inverted nDSM.
-    Tree tops are seeds (markers), watershed grows outward until
-    it meets neighbouring crowns or vegetation boundary.
-    """
+    """Run marker-controlled watershed on inverted nDSM."""
     logger.info(f"Running watershed (compactness={compactness})...")
 
     rows, cols = ndsm.shape
@@ -190,6 +197,109 @@ def run_watershed(ndsm, seeds, veg_mask, compactness, logger):
     return segments
 
 
+def fill_crown_holes(segments, logger):
+    """
+    Fill enclosed holes within crowns
+    For each connected blob of background pixels: If bordered by exactly 
+    one crown ID on all sides -> fill with that ID
+
+    Uses 4-connectivity for background blobs (cardinal directions only)
+    so diagonal-only connections are treated as separate blobs.
+    """
+    logger.info("Filling enclosed holes within crowns...")
+
+    from scipy.ndimage import label, find_objects
+
+    rows, cols = segments.shape
+
+    # Background mask -> pixels not belonging to any crown
+    bg_mask = segments == 0
+
+    # Label connected background regions using 4-connectivity
+    struct_4 = np.array([[0,1,0],
+                         [1,1,1],
+                         [0,1,0]], dtype=int)
+    bg_labels, n_blobs = label(bg_mask, structure=struct_4)
+    logger.info(f"  Background blobs found: {n_blobs:,}")
+
+    filled       = segments.copy()
+    total_filled = 0
+    blobs_filled = 0
+    blobs_left   = 0
+    blobs_edge   = 0
+
+    # Process each background blob
+    blob_slices = find_objects(bg_labels)
+
+    for blob_id, slices in enumerate(blob_slices, start=1):
+        if slices is None:
+            continue
+
+        # Extract blob region with 1 pixel padding for border check
+        row_sl, col_sl = slices
+        r0 = max(0, row_sl.start - 1)
+        r1 = min(rows, row_sl.stop + 1)
+        c0 = max(0, col_sl.start - 1)
+        c1 = min(cols, col_sl.stop + 1)
+
+        blob_region  = bg_labels[r0:r1, c0:c1] == blob_id
+        crown_region = segments[r0:r1, c0:c1]
+
+        # Check if blob touches raster edge
+        # A blob touching the edge is open space, not an enclosed hole
+        full_row_sl = slice(row_sl.start, row_sl.stop)
+        full_col_sl = slice(col_sl.start, col_sl.stop)
+        blob_pixels = bg_labels[full_row_sl, full_col_sl] == blob_id
+
+        touches_edge = (
+            row_sl.start == 0 or
+            row_sl.stop  == rows or
+            col_sl.start == 0 or
+            col_sl.stop  == cols
+        )
+        if touches_edge:
+            blobs_edge += 1
+            continue
+
+        # Find crown IDs bordering this blob using dilation
+        # Dilate blob by 1 pixel and check what crown IDs appear
+        from scipy.ndimage import binary_dilation
+        struct_4_local = np.array([[0,1,0],
+                                   [1,1,1],
+                                   [0,1,0]], dtype=int)
+        dilated      = binary_dilation(blob_region, structure=struct_4_local)
+        border_mask  = dilated & ~blob_region
+        border_crowns = crown_region[border_mask]
+
+        # Get unique crown IDs on border, excluding background
+        unique_border = np.unique(border_crowns)
+        unique_border = unique_border[unique_border > 0]
+
+        if len(unique_border) == 1:
+            # Enclosed by exactly one crown -> fill it
+            crown_id = unique_border[0]
+            # Apply fill to global segments array
+            blob_global = bg_labels[
+                row_sl.start:row_sl.stop,
+                col_sl.start:col_sl.stop
+            ] == blob_id
+            n_pixels = np.sum(blob_global)
+            filled[
+                row_sl.start:row_sl.stop,
+                col_sl.start:col_sl.stop
+            ][blob_global] = crown_id
+            total_filled += n_pixels
+            blobs_filled += 1
+        else:
+            blobs_left += 1
+
+    logger.info(f"  Blobs touching edge    : {blobs_edge:,} (skipped)")
+    logger.info(f"  Blobs filled           : {blobs_filled:,}")
+    logger.info(f"  Blobs left (open space): {blobs_left:,}")
+    logger.info(f"  Total pixels filled    : {total_filled:,}")
+    return filled
+
+
 def save_segment_raster(segments, gt, proj, output_path, logger):
     """Save watershed segments as integer GeoTIFF."""
     logger.info(f"Saving segment raster...")
@@ -211,10 +321,7 @@ def save_segment_raster(segments, gt, proj, output_path, logger):
 
 def vectorize_to_gpkg(segment_raster_path, output_gpkg, layer_name, proj,
                       logger):
-    """
-    Vectorize segment raster to crown polygons in GeoPackage.
-    Opens existing GeoPackage if present, replaces layer if it exists.
-    """
+    """Vectorize segment raster to crown polygons in GeoPackage."""
     logger.info("Vectorizing segments to crown polygons...")
 
     ds_seg   = gdal.Open(segment_raster_path)
@@ -256,6 +363,105 @@ def vectorize_to_gpkg(segment_raster_path, output_gpkg, layer_name, proj,
     return n_polys
 
 
+def clean_small_polygons(output_gpkg, layer_name, min_area, pixel_size,
+                         logger):
+    """
+    Post-process small polygons in vector layer.
+    merge: Small polygon (<=min_area) touching exactly
+    one neighbour on a shared edge -> merge into that neighbour.
+    remove: Small polygon touching no neighbours or
+    touching multiple neighbours -> delete.
+    """
+    logger.info(f"Cleaning small polygons (min_area={min_area} m2)...")
+
+    ds    = ogr.Open(output_gpkg, 1)
+    layer = ds.GetLayerByName(layer_name)
+    if layer is None:
+        msg = f"Layer '{layer_name}' not found"
+        logger.error(msg)
+        raise ValueError(msg)
+
+    # Collect all small polygon FIDs and their geometries
+    small_fids  = []
+    small_geoms = {}
+
+    layer.ResetReading()
+    for feature in layer:
+        geom = feature.GetGeometryRef()
+        if geom is None:
+            continue
+        area = geom.Area()
+        if area <= min_area:
+            fid = feature.GetFID()
+            small_fids.append(fid)
+            small_geoms[fid] = geom.Clone()
+
+    logger.info(f"  Small polygons found: {len(small_fids):,}")
+
+    merged  = 0
+    removed = 0
+
+    for fid in small_fids:
+        small_geom = small_geoms[fid]
+
+        # Find candidate neighbours via spatial filter
+        # Expand bbox by one pixel to catch touching polygons
+        env = small_geom.GetEnvelope()
+        layer.SetSpatialFilterRect(
+            env[0] - pixel_size, env[2] - pixel_size,
+            env[1] + pixel_size, env[3] + pixel_size
+        )
+
+        neighbours = []
+        layer.ResetReading()
+        for candidate in layer:
+            c_fid = candidate.GetFID()
+            if c_fid == fid:
+                continue
+            c_geom = candidate.GetGeometryRef()
+            if c_geom is None:
+                continue
+            # Check for shared edge (not just corner touch)
+            # Intersection length > 0 means shared edge not just point
+            intersection = small_geom.Intersection(c_geom)
+            if intersection is None:
+                continue
+            geom_type = intersection.GetGeometryType()
+            # Shared edge = LineString or MultiLineString (not Point)
+            if geom_type in (ogr.wkbLineString,
+                             ogr.wkbMultiLineString,
+                             ogr.wkbLinearRing):
+                neighbours.append(c_fid)
+
+        layer.SetSpatialFilter(None)
+
+        if len(neighbours) == 1:
+            # merge into the single neighbour
+            neighbour_feat = layer.GetFeature(neighbours[0])
+            if neighbour_feat is None:
+                removed += 1
+                layer.DeleteFeature(fid)
+                continue
+            n_geom   = neighbour_feat.GetGeometryRef()
+            merged_g = n_geom.Union(small_geom)
+            if merged_g is not None:
+                neighbour_feat.SetGeometry(merged_g)
+                layer.SetFeature(neighbour_feat)
+            layer.DeleteFeature(fid)
+            merged += 1
+
+        else:
+            # isolated or ambiguous -> remove
+            layer.DeleteFeature(fid)
+            removed += 1
+
+    ds.Destroy()
+
+    logger.info(f"  Merged into neighbour : {merged:,}")
+    logger.info(f"  Removed (isolated)    : {removed:,}")
+    logger.info(f"  Total removed from layer: {merged + removed:,}")
+    return merged, removed
+
 # ============================================================
 # MAIN
 # ============================================================
@@ -289,6 +495,7 @@ if __name__ == "__main__":
         # 1 Load nDSM
         ndsm, gt, proj = load_raster(INPUT_NDSM, logger)
         rows, cols = ndsm.shape
+        pixel_size     = gt[1]
 
         # 2 Load and apply vegetation mask
         mask_arr, _, _ = load_raster(
@@ -316,16 +523,26 @@ if __name__ == "__main__":
         # 4 Run watershed
         segments = run_watershed(ndsm, seeds, veg_mask, args.compactness,
                                  logger)
+        
+        # 5 Fill enclosed holes within crowns (raster post-processing)
+        segments = fill_crown_holes(segments, logger)
 
-        # 5 Save segment raster
+        # 6 Save segment raster
         save_segment_raster(segments, gt, proj, segment_raster, logger)
 
-        # 6 Vectorize to GeoPackage
+        # 7 Vectorize to GeoPackage
         n_polys = vectorize_to_gpkg(
             segment_raster, OUTPUT_CROWNS_GPKG, layer_name, proj, logger
         )
+        logger.info(f"  Polygons after vectorization: {n_polys:,}")
 
-        logger.info(f"Done! {n_polys:,} crown polygons created.")
+        # 8 Clean small polygons (vector post-processing)
+        merged, removed = clean_small_polygons(
+            OUTPUT_CROWNS_GPKG, layer_name, args.min_area, pixel_size, logger
+        )
+        n_final = n_polys - merged - removed
+        logger.info(f"  Polygons after cleanup: {n_final:,}")
+
         logger.info(f"  Segment raster : {segment_raster}")
         logger.info(f"  Crown polygons : {OUTPUT_CROWNS_GPKG}")
         logger.info(f"  Layer          : {layer_name}")
