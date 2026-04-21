@@ -178,7 +178,7 @@ def vectorize_to_polygons(raster_path, logger):
     band    = ds_rast.GetRasterBand(1)
 
     # Create in-memory vector layer
-    mem_driver = ogr.GetDriverByName("Memory")
+    mem_driver = ogr.GetDriverByName("MEM")
     mem_ds     = mem_driver.CreateDataSource("memdata")
     srs        = osr.SpatialReference()
     srs.ImportFromWkt(ds_rast.GetProjection())
