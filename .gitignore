@@ -8,6 +8,7 @@ data/processed/
 
 # Keep outputs but not large rasters
 outputs/maps/*.tif
+outputs/classification/*.csv
 
 # Python
 __pycache__/
