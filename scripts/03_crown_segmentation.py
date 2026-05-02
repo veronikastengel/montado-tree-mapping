@@ -5,7 +5,7 @@ Segments individual tree crowns from nDSM using marker-controlled
 watershed algorithm, seeded by treetop points.
 
 Usage:
-    python scripts/03_crown_segmentation.py --treetops-layer treetops_w15_mh3.0_t0.001 --compactness 0.01
+    python scripts/03_crown_segmentation.py --treetops-layer treetops_lidar_ra2.0_rb0.1_mh2.0_md_3.0 --compactness 0.01 --min-area 4
 
 Arguments:
     --treetops-layer    name of layer inside treetops.gpkg to use as seeds
@@ -35,7 +35,7 @@ from utils import get_logger
 BASE_DIR         = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INPUT_NDSM       = os.path.join(BASE_DIR, "data", "processed", "nDSM.tif")
 INPUT_MASK       = os.path.join(BASE_DIR, "data", "processed", "vegetation_mask.tif")
-INPUT_TREETOPS   = os.path.join(BASE_DIR, "data", "processed", "treetops.gpkg") #treetops.gpkg or treetops_lidar.gpkg
+INPUT_TREETOPS   = os.path.join(BASE_DIR, "data", "processed", "treetops_lidar.gpkg") #treetops.gpkg or treetops_lidar.gpkg
 OUTPUT_DIR       = os.path.join(BASE_DIR, "data", "processed")
 OUTPUT_CROWNS_GPKG = os.path.join(OUTPUT_DIR, "crowns.gpkg")
 # ============================================================
@@ -479,7 +479,8 @@ if __name__ == "__main__":
         # Use treetops layer name as base so outputs are traceable
         param_str        = (f"{treetops_layer_name}"
                             f"_c{args.compactness}"
-                            f"_mh{args.minheight}")
+                            f"_mh{args.minheight}"
+                            f"_ma{args.min_area}")
         layer_name       = f"crowns_{param_str}"
         segment_raster   = os.path.join(OUTPUT_DIR,
                                         f"crown_segments_{param_str}.tif")
