@@ -1,5 +1,5 @@
 """
-05c_extract_sentinel2.py
+04a_extract_sentinel2.py
 ========================
 Extracts and preprocesses Sentinel-2 bands from a SAFE archive for
 use in landscape classification.
@@ -24,7 +24,7 @@ Output:
                                           study area, clouds masked
 
 Usage:
-    python scripts/05c_extract_sentinel2.py
+    python scripts/04a_extract_sentinel2.py
 """
 
 import os
@@ -316,21 +316,21 @@ def compute_indices(stack, band_names, gt, proj, output_dir, logger):
     ndvi = safe_divide(nir - red, nir + red)
     indices["NDVI"] = save_index(ndvi, "NDVI")
 
-    # NDRE — red edge index, sensitive to chlorophyll differences
+    # NDRE -> red edge index, sensitive to chlorophyll differences
     # between cork and holm oak
     ndre = safe_divide(re1 - red, re1 + red)
     indices["NDRE"] = save_index(ndre, "NDRE")
 
-    # NDWI — moisture index
+    # NDWI -> moisture index
     ndwi = safe_divide(green - nir, green + nir)
     indices["NDWI"] = save_index(ndwi, "NDWI")
 
-    # NBR — normalised burn ratio
+    # NBR -> normalised burn ratio
     # eucalyptus has distinctive NBR signature vs oak
     nbr = safe_divide(nir2 - swir2, nir2 + swir2)
     indices["NBR"] = save_index(nbr, "NBR")
 
-    # EVI — enhanced vegetation index
+    # EVI -> enhanced vegetation index
     evi = np.where(
         ~np.isnan(nir) & ~np.isnan(red) & ~np.isnan(blue),
         2.5 * safe_divide(
@@ -348,13 +348,9 @@ def compute_indices(stack, band_names, gt, proj, output_dir, logger):
 # MAIN
 # ============================================================
 if __name__ == "__main__":
-    logger = get_logger("05c_extract_sentinel2")
+    logger = get_logger("04a_extract_sentinel2")
 
     try:
-        logger.info("=" * 60)
-        logger.info("STEP 05c: Extract and preprocess Sentinel-2 data")
-        logger.info("=" * 60)
-
         os.makedirs(OUTPUT_DIR, exist_ok=True)
 
         # Check SAFE folder exists
@@ -375,12 +371,12 @@ if __name__ == "__main__":
         logger.info(f"  Target CRS : {TARGET_CRS}")
         logger.info(f"  Target res : {TARGET_RES} m")
 
-        # 1. Get study area extent from nDSM
+        # 1 Get study area extent from nDSM
         x_min, y_min, x_max, y_max, ndsm_proj = get_study_extent(
             INPUT_NDSM, TARGET_CRS, logger
         )
 
-        # 2. Load SCL mask
+        # 2 Load SCL mask
         scl_valid, gt, proj = load_scl_mask(
             R20M_DIR, TARGET_CRS,
             x_min, y_min, x_max, y_max,
@@ -388,29 +384,25 @@ if __name__ == "__main__":
             SCL_MASK_CLASSES, logger
         )
 
-        # 3. Stack all bands
+        # 3 Stack all bands
         stack, gt, proj, band_names = stack_bands(
             BANDS, scl_valid,
             TARGET_CRS, x_min, y_min, x_max, y_max,
             ndsm_proj, TARGET_RES, logger
         )
 
-        # 4. Save multiband stack
+        # 4 Save multiband stack
         save_stack(stack, gt, proj, band_names, OUTPUT_STACK, logger)
 
-        # 5. Compute vegetation indices
+        # 5 Compute vegetation indices
         indices = compute_indices(
             stack, band_names, gt, proj, OUTPUT_DIR, logger
         )
 
-        logger.info("=" * 60)
-        logger.info("Done!")
         logger.info(f"  Band stack     : {OUTPUT_STACK}")
         logger.info(f"  Bands          : {band_names}")
         logger.info(f"  Indices saved  : {list(indices.keys())}")
         logger.info(f"  All outputs in : {OUTPUT_DIR}")
-        logger.info("=" * 60)
-        logger.info("Next step: run 05d_landscape_classification.py")
 
     except Exception as e:
         logger.error(f"Script failed: {e}", exc_info=True)
