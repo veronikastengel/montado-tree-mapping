@@ -1,5 +1,5 @@
 """
-05d_landscape_classification.py
+04b_landscape_classification.py
 ================================
 Supervised Random Forest classification of the Sentinel-2 scene
 into landscape/vegetation structural units using digitised training
@@ -7,30 +7,33 @@ polygons from COSc land inventory.
 
 Pipeline:
     1. Load Sentinel-2 band stack + vegetation indices
-    2. Load training polygons from GeoPackage
-    3. Extract pixel values within each training polygon
-    4. Train Random Forest classifier
-    5. Classify full scene
-    6. Save classification raster + confidence raster
-    7. Save model diagnostics (feature importance, confusion matrix)
+    2. Apply vegetation mask (excludes village, buildings, bare ground)
+    3. Load training polygons from GeoPackage
+    4. Extract pixel values within each training polygon (fast rasterization)
+    5. Train Random Forest classifier
+    6. Classify full scene (masked pixels stay NoData)
+    7. Save classification raster + confidence raster
+    8. Save model diagnostics (feature importance, confusion matrix)
 
 Classes (from digitised COSc polygons):
-    213  sub_olive       — olive groves
-    311  sobreiro_azinheira — cork/holm oak montado
-    312  eucalipto       — eucalyptus plantation
-    313  outras_folhosas — other broadleaf
-    321  pinheiro_bravo  — maritime pine
-    410  matos           — shrubland/maquis
+    213  sub_olive          -> olive groves
+    311  sobreiro_azinheira -> cork/holm oak montado
+    312  eucalipto          -> eucalyptus plantation
+    313  outras_folhosas    -> other broadleaf
+    321  pinheiro_bravo     -> maritime pine
+    410  matos              -> shrubland/maquis
 
 Usage:
-    python scripts/05d_landscape_classification.py
-    python scripts/05d_landscape_classification.py --n-estimators 200 --max-depth 20
+    python scripts/04b_landscape_classification.py
+    python scripts/04b_landscape_classification.py --n-estimators 200 --max-depth 20
 
 Arguments:
     --n-estimators      number of RF trees (default: 200)
     --max-depth         max tree depth, None = unlimited (default: None)
     --min-samples-leaf  min samples per leaf (default: 5)
     --test-size         fraction of samples held out for validation (default: 0.25)
+    --mask-threshold    Minimum fraction of vegetation pixels within a Sentinel-2
+                        pixel to include it (default: 0.3 = 30%)
 """
 
 import os
@@ -56,33 +59,26 @@ INPUT_INDICES     = {
     "NBR":  os.path.join(BASE_DIR, "data", "processed", "s2_NBR.tif"),
     "EVI":  os.path.join(BASE_DIR, "data", "processed", "s2_EVI.tif"),
 }
+INPUT_VEG_MASK    = os.path.join(BASE_DIR, "data", "processed",
+                                 "vegetation_mask.tif")
 INPUT_TRAINING    = os.path.join(BASE_DIR, "data", "raw",
                                  "area_information.gpkg")
 TRAINING_LAYER    = "structural_area_locations_3763"
 TRAINING_FIELD    = "type"
 OUTPUT_DIR        = os.path.join(BASE_DIR, "data", "processed")
-OUTPUT_CLASSIF    = os.path.join(OUTPUT_DIR, "landscape_classification.tif")
-OUTPUT_CONFIDENCE = os.path.join(OUTPUT_DIR, "landscape_confidence.tif")
 OUTPUT_DIAG_DIR   = os.path.join(BASE_DIR, "outputs", "classification")
 
-# Class label mapping — text to integer
+CONF_NODATA       = -9999.0  # nodata value for confidence raster
+
+# Class label mapping -> text to integer
 # Add any additional classes you digitised here
 CLASS_MAP = {
-    "213":                  1,
-    "sub_olive":            1,
-    "311":                  2,
-    "sobreiro_azinheira":   2,
-    "sobreiro e azinheira": 2,
-    "312":                  3,
-    "eucalipto":            3,
-    "313":                  4,
-    "outras_folhosas":      4,
-    "outras folhosas":      4,
-    "321":                  5,
-    "pinheiro_bravo":       5,
-    "pinheiro bravo":       5,
-    "410":                  6,
-    "matos":                6,
+    "213": 1,
+    "311": 2,
+    "312": 3,
+    "313": 4,
+    "321": 5,
+    "410": 6,
 }
 
 CLASS_NAMES = {
@@ -108,7 +104,7 @@ def parse_args():
     )
     parser.add_argument(
         "--max-depth",
-        type=int,
+        type=lambda x: None if x.lower() == "none" else int(x),
         default=None,
         help="Max tree depth, None=unlimited (default: None)"
     )
@@ -124,6 +120,13 @@ def parse_args():
         default=0.25,
         help="Fraction of samples for validation (default: 0.25)"
     )
+    parser.add_argument(
+        "--mask-threshold",
+        type=float,
+        default=0.3,
+        help="Minimum fraction of vegetation pixels within a Sentinel-2 "
+            "pixel to include it (default: 0.3 = 30%%)"
+    )
     return parser.parse_args()
 
 
@@ -134,7 +137,7 @@ def load_raster_stack(stack_path, indices_paths, logger):
     """
     logger.info("Loading Sentinel-2 stack and indices...")
 
-    ds    = gdal.Open(stack_path)
+    ds = gdal.Open(stack_path)
     if ds is None:
         msg = f"Cannot open stack: {stack_path}"
         logger.error(msg)
@@ -146,7 +149,6 @@ def load_raster_stack(stack_path, indices_paths, logger):
     gt      = ds.GetGeoTransform()
     proj    = ds.GetProjection()
 
-    # Load all bands
     arrays     = []
     band_names = []
     for i in range(1, n_bands + 1):
@@ -161,14 +163,13 @@ def load_raster_stack(stack_path, indices_paths, logger):
     # Load vegetation indices
     for idx_name, idx_path in indices_paths.items():
         if not os.path.exists(idx_path):
-            logger.info(f"  Skipping {idx_name} — file not found")
+            logger.info(f"  Skipping {idx_name} -> file not found")
             continue
         ds_idx = gdal.Open(idx_path)
         if ds_idx is None:
-            logger.info(f"  Skipping {idx_name} — cannot open")
+            logger.info(f"  Skipping {idx_name} -> cannot open")
             continue
         arr = ds_idx.GetRasterBand(1).ReadAsArray().astype(np.float32)
-        # Resize if needed
         if arr.shape != (rows, cols):
             logger.info(f"  Resizing {idx_name} {arr.shape} -> {(rows, cols)}")
             from skimage.transform import resize
@@ -182,9 +183,122 @@ def load_raster_stack(stack_path, indices_paths, logger):
         logger.info(f"  Loaded index: {idx_name}")
 
     stack = np.stack(arrays, axis=0)
-    logger.info(f"  Full stack shape: {stack.shape} "
+    logger.info(f"  Full stack shape  : {stack.shape} "
                 f"({stack.shape[0]} features, {rows}x{cols} pixels)")
+    logger.info(f"  Total features for RF: {len(band_names)}")
     return stack, gt, proj, band_names, rows, cols
+
+
+def apply_vegetation_mask(stack, gt, rows, cols, mask_path,
+                          mask_threshold, logger):
+    """
+    Apply vegetation mask to Sentinel-2 stack using fractional
+    coverage thresholding.
+
+    Because the vegetation mask (50cm) is much finer than Sentinel-2
+    (10m), each S2 pixel covers ~400 mask pixels. Rather than masking
+    an entire S2 pixel because part of it is non-vegetation, we
+    include the pixel if at least mask_threshold fraction of the
+    corresponding mask area is valid vegetation.
+
+    This is standard practice when downscaling fine masks to coarser
+    imagery — it preserves S2 pixels that contain real vegetation
+    signal even if they also contain some bare ground or road.
+    """
+    logger.info(f"Applying vegetation mask "
+                f"(threshold={mask_threshold*100:.0f}% vegetation)...")
+
+    if not os.path.exists(mask_path):
+        msg = f"Vegetation mask not found: {mask_path}"
+        logger.error(msg)
+        raise FileNotFoundError(msg)
+
+    # Warp mask to stack grid using AVERAGE resampling
+    # This gives fraction of valid pixels per S2 pixel (0.0 to 1.0)
+    # because the mask is binary (0/1) and average = mean = fraction
+    x_min = gt[0]
+    y_max = gt[3]
+    x_max = gt[0] + cols * gt[1]
+    y_min = gt[3] + rows * gt[5]
+
+    # warp mask to float MEM raster at stack resolution
+    # using average resampling, with nodata explicitly excluded
+    warp_options = gdal.WarpOptions(
+        width=cols,
+        height=rows,
+        outputBounds=(x_min, y_min, x_max, y_max),
+        resampleAlg="average",
+        srcNodata=255,           # exclude nodata from average
+        dstNodata=-1.0,          # output nodata for pixels fully outside
+        outputType=gdal.GDT_Float32,
+        format="MEM"
+    )
+    ds_warped = gdal.Warp("", mask_path, options=warp_options)
+    if ds_warped is None:
+        msg = "Failed to warp vegetation mask to stack grid"
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    frac_arr  = ds_warped.GetRasterBand(1).ReadAsArray().astype(np.float32)
+    ds_warped = None
+
+    # Pixels with dstNodata (-1) are fully outside study area -> mask them
+    frac_arr[frac_arr < 0] = 0.0
+
+    # Pixel is valid if vegetation fraction >= threshold
+    valid   = frac_arr >= mask_threshold
+    invalid = ~valid
+
+    n_total   = rows * cols
+    n_valid   = int(np.sum(valid))
+    n_invalid = int(np.sum(invalid))
+    logger.info(f"  S2 pixels included : {n_valid:,} "
+                f"({100*n_valid/n_total:.1f}%) "
+                f"[>= {mask_threshold*100:.0f}% vegetation]")
+    logger.info(f"  S2 pixels excluded : {n_invalid:,} "
+                f"({100*n_invalid/n_total:.1f}%)")
+
+    # Report fraction distribution for tuning
+    logger.info(f"  Vegetation fraction stats:")
+    logger.info(f"    Mean   : {frac_arr.mean():.2f}")
+    logger.info(f"    Median : {np.median(frac_arr):.2f}")
+    logger.info(f"    P25    : {np.percentile(frac_arr, 25):.2f}")
+    logger.info(f"    P75    : {np.percentile(frac_arr, 75):.2f}")
+
+    for i in range(stack.shape[0]):
+        stack[i][invalid] = np.nan
+
+    return stack
+
+
+def rasterize_polygon_to_mask(geom, gt, rows, cols):
+    """
+    Rasterize a single OGR polygon geometry into a boolean numpy mask
+    at the same grid as the stack. Returns True where inside polygon.
+
+    Much faster than the pixel-by-pixel point-in-polygon approach
+    because GDAL's RasterizeLayer runs in C.
+    """
+    mem_driver = gdal.GetDriverByName("MEM")
+    ds_mask    = mem_driver.Create("", cols, rows, 1, gdal.GDT_Byte)
+    ds_mask.SetGeoTransform(gt)
+
+    # Create in-memory vector layer with just this polygon
+    srs       = osr.SpatialReference()
+    mem_vec   = ogr.GetDriverByName("MEM").CreateDataSource("")
+    mem_layer = mem_vec.CreateLayer("poly", srs=srs,
+                                    geom_type=ogr.wkbPolygon)
+    feat      = ogr.Feature(mem_layer.GetLayerDefn())
+    feat.SetGeometry(geom.Clone())
+    mem_layer.CreateFeature(feat)
+
+    # Burn polygon into raster
+    gdal.RasterizeLayer(ds_mask, [1], mem_layer, burn_values=[1])
+    mask = ds_mask.GetRasterBand(1).ReadAsArray().astype(bool)
+
+    ds_mask = None
+    mem_vec = None
+    return mask
 
 
 def extract_training_samples(stack, gt, proj, training_path,
@@ -192,6 +306,7 @@ def extract_training_samples(stack, gt, proj, training_path,
                               class_names, logger):
     """
     Extract pixel values from stack at training polygon locations.
+    Uses fast GDAL rasterization instead of pixel-by-pixel geometry tests.
     Returns X (n_samples, n_features) and y (n_samples,) arrays.
     """
     logger.info("Extracting training samples from polygons...")
@@ -211,18 +326,12 @@ def extract_training_samples(stack, gt, proj, training_path,
         logger.error(msg)
         raise ValueError(msg)
 
-    n_features = stack.shape[0]
     rows, cols = stack.shape[1], stack.shape[2]
-    x_origin   = gt[0]
-    y_origin   = gt[3]
-    px_w       = gt[1]
-    px_h       = gt[5]  # negative
 
-    # Rasterize each training polygon to get pixel indices
-    X_samples  = []
-    y_samples  = []
+    X_samples    = []
+    y_samples    = []
     class_counts = {}
-    unmatched  = []
+    unmatched    = []
 
     layer.ResetReading()
     for feature in layer:
@@ -230,15 +339,15 @@ def extract_training_samples(stack, gt, proj, training_path,
         if raw_label is None:
             continue
 
-        # Normalise label — strip whitespace, lowercase for matching
+        # Normalise label — strip whitespace for matching
         raw_clean = str(raw_label).strip()
         label_int = None
 
-        # Try exact match first
+        # Exact match first
         if raw_clean in class_map:
             label_int = class_map[raw_clean]
         else:
-            # Try case-insensitive match
+            # Case-insensitive fallback
             for key, val in class_map.items():
                 if key.lower() == raw_clean.lower():
                     label_int = val
@@ -250,52 +359,41 @@ def extract_training_samples(stack, gt, proj, training_path,
                 logger.info(f"  Unmatched label: '{raw_clean}' — skipping")
             continue
 
-        # Rasterize polygon to pixel coordinates
         geom = feature.GetGeometryRef()
         if geom is None:
             continue
 
-        env    = geom.GetEnvelope()
-        col_min = max(0, int((env[0] - x_origin) / px_w))
-        col_max = min(cols - 1, int((env[1] - x_origin) / px_w) + 1)
-        row_min = max(0, int((env[3] - y_origin) / px_h))
-        row_max = min(rows - 1, int((env[2] - y_origin) / px_h) + 1)
+        # Fast rasterization — replaces slow pixel-by-pixel loop
+        poly_mask = rasterize_polygon_to_mask(geom, gt, rows, cols)
 
-        # Check each pixel in bounding box
-        for row in range(row_min, row_max + 1):
-            for col in range(col_min, col_max + 1):
-                # Pixel centre coordinates
-                px_x = x_origin + (col + 0.5) * px_w
-                px_y = y_origin + (row + 0.5) * px_h
+        # Get pixel indices inside polygon
+        pixel_rows, pixel_cols = np.where(poly_mask)
+        if len(pixel_rows) == 0:
+            logger.info(f"  Warning: polygon for '{raw_clean}' has no "
+                        f"pixels in raster extent — check CRS alignment")
+            continue
 
-                # Point in polygon test
-                pt = ogr.Geometry(ogr.wkbPoint)
-                pt.AddPoint(px_x, px_y)
-                if not geom.Contains(pt):
-                    continue
-
-                # Extract feature vector
-                pixel_vals = stack[:, row, col]
-
-                # Skip if any NaN (cloud masked)
-                if np.any(np.isnan(pixel_vals)):
-                    continue
-
-                X_samples.append(pixel_vals)
-                y_samples.append(label_int)
-                class_counts[label_int] = (
-                    class_counts.get(label_int, 0) + 1
-                )
+        for r, c in zip(pixel_rows, pixel_cols):
+            pixel_vals = stack[:, r, c]
+            # Skip NaN pixels (cloud masked or vegetation masked)
+            if np.any(np.isnan(pixel_vals)):
+                continue
+            X_samples.append(pixel_vals)
+            y_samples.append(label_int)
+            class_counts[label_int] = class_counts.get(label_int, 0) + 1
 
     ds_train = None
 
     if len(X_samples) == 0:
-        msg = "No training samples extracted — check CRS and polygon locations"
+        msg = ("No training samples extracted — "
+               "check CRS alignment and polygon locations. "
+               "Also check that training polygons overlap valid "
+               "(non-masked) pixels.")
         logger.error(msg)
         raise ValueError(msg)
 
     X = np.array(X_samples, dtype=np.float32)
-    y = np.array(y_samples, dtype=np.int32)
+    y = np.array(y_samples,  dtype=np.int32)
 
     logger.info(f"  Total training pixels: {len(y):,}")
     logger.info(f"  Samples per class:")
@@ -314,8 +412,8 @@ def train_random_forest(X, y, n_estimators, max_depth,
                         class_names, band_names,
                         output_dir, param_str, logger):
     """
-    Train Random Forest classifier with train/test split.
-    Reports accuracy metrics and feature importance.
+    Train Random Forest classifier with stratified train/test split.
+    Reports accuracy, per-class metrics, and feature importance.
     """
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.model_selection import train_test_split
@@ -328,7 +426,7 @@ def train_random_forest(X, y, n_estimators, max_depth,
                 f"max_depth={max_depth}, "
                 f"min_samples_leaf={min_samples_leaf})...")
 
-    # Train/test split — stratified to maintain class balance
+    # Stratified split maintains class proportions in train and test
     X_train, X_test, y_train, y_test = train_test_split(
         X, y,
         test_size=test_size,
@@ -342,18 +440,17 @@ def train_random_forest(X, y, n_estimators, max_depth,
         n_estimators=n_estimators,
         max_depth=max_depth,
         min_samples_leaf=min_samples_leaf,
-        n_jobs=-1,  # use all CPU cores
+        n_jobs=-1,        # use all CPU cores
         random_state=42,
         class_weight="balanced"  # handle class imbalance
     )
     rf.fit(X_train, y_train)
 
-    # Evaluate
-    y_pred    = rf.predict(X_test)
-    accuracy  = accuracy_score(y_test, y_pred)
+    # Evaluate on held-out test set
+    y_pred   = rf.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
     logger.info(f"  Overall accuracy: {accuracy*100:.1f}%")
 
-    # Per-class report
     target_names = [
         class_names.get(c, f"class_{c}")
         for c in sorted(set(y))
@@ -365,7 +462,7 @@ def train_random_forest(X, y, n_estimators, max_depth,
     logger.info(f"  Classification report:\n{report}")
 
     # Feature importance
-    importances = rf.feature_importances_
+    importances      = rf.feature_importances_
     importance_pairs = sorted(
         zip(band_names, importances),
         key=lambda x: x[1],
@@ -375,8 +472,9 @@ def train_random_forest(X, y, n_estimators, max_depth,
     for name, imp in importance_pairs[:10]:
         logger.info(f"    {name:20s}: {imp:.4f}")
 
-    # Save confusion matrix
     os.makedirs(output_dir, exist_ok=True)
+
+    # Save confusion matrix
     cm_path = os.path.join(
         output_dir, f"confusion_matrix_{param_str}.csv"
     )
@@ -384,8 +482,8 @@ def train_random_forest(X, y, n_estimators, max_depth,
     with open(cm_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([""] + target_names)
-        for i, row in enumerate(cm):
-            writer.writerow([target_names[i]] + list(row))
+        for i, row_cm in enumerate(cm):
+            writer.writerow([target_names[i]] + list(row_cm))
     logger.info(f"  Confusion matrix saved: {cm_path}")
 
     # Save feature importances
@@ -415,39 +513,43 @@ def classify_scene(rf, stack, gt, proj, rows, cols,
                    class_names, output_classif,
                    output_confidence, logger):
     """
-    Apply trained RF to full scene.
-    Saves classification raster and confidence raster.
+    Apply trained RF classifier to full scene pixel by pixel.
+    Pixels that are NaN (masked by vegetation mask or clouds) are
+    set to NoData in both output rasters — they are never classified.
+    Saves classification raster (Int16) and confidence raster (Float32).
     """
     logger.info("Classifying full scene...")
 
     n_features = stack.shape[0]
 
-    # Reshape stack to (n_pixels, n_features)
+    # Reshape to (n_pixels, n_features)
     pixels = stack.reshape(n_features, -1).T  # (rows*cols, n_features)
 
-    # Identify valid pixels (no NaN)
+    # Valid pixels = no NaN in any band
+    # NaN pixels include both cloud-masked and vegetation-masked pixels
     valid_mask = ~np.any(np.isnan(pixels), axis=1)
-    n_valid    = np.sum(valid_mask)
+    n_valid    = int(np.sum(valid_mask))
     n_total    = len(valid_mask)
-    logger.info(f"  Valid pixels: {n_valid:,} of {n_total:,} "
+    logger.info(f"  Valid pixels to classify : {n_valid:,} of {n_total:,} "
                 f"({100*n_valid/n_total:.1f}%)")
+    logger.info(f"  Masked/excluded pixels   : {n_total - n_valid:,} "
+                f"({100*(n_total - n_valid)/n_total:.1f}%)")
 
-    # Classify in batches to avoid memory issues
-    batch_size  = 500000
-    labels_flat = np.zeros(n_total, dtype=np.int16)
-    conf_flat   = np.zeros(n_total, dtype=np.float32)
-    nodata_val  = -1
+    # Initialise output arrays with nodata values
+    classif_nodata = -1
+    labels_flat    = np.full(n_total, classif_nodata, dtype=np.int16)
+    conf_flat      = np.full(n_total, CONF_NODATA,    dtype=np.float32)
 
     valid_indices = np.where(valid_mask)[0]
+    batch_size    = 500000
     n_batches     = int(np.ceil(len(valid_indices) / batch_size))
-
-    logger.info(f"  Processing {n_batches} batches of {batch_size:,}...")
+    logger.info(f"  Processing {n_batches} batches of up to "
+                f"{batch_size:,} pixels...")
 
     for i in range(n_batches):
-        start  = i * batch_size
-        end    = min(start + batch_size, len(valid_indices))
-        idx    = valid_indices[start:end]
-
+        start      = i * batch_size
+        end        = min(start + batch_size, len(valid_indices))
+        idx        = valid_indices[start:end]
         batch_X    = pixels[idx]
         batch_pred = rf.predict(batch_X)
         batch_prob = rf.predict_proba(batch_X)
@@ -460,23 +562,20 @@ def classify_scene(rf, stack, gt, proj, rows, cols,
             logger.info(f"  Batch {i+1}/{n_batches} done "
                         f"({100*(i+1)/n_batches:.0f}%)")
 
-    # Set invalid pixels to nodata
-    labels_flat[~valid_mask] = nodata_val
-    conf_flat[~valid_mask]   = np.nan
-
     # Reshape to 2D
     labels_2d = labels_flat.reshape(rows, cols)
     conf_2d   = conf_flat.reshape(rows, cols)
 
-    # Report class distribution
-    logger.info(f"  Classification results:")
+    # Report class distribution (exclude nodata)
+    logger.info(f"  Classification results (valid pixels only):")
     unique, counts = np.unique(
-        labels_2d[labels_2d != nodata_val],
+        labels_2d[labels_2d != classif_nodata],
         return_counts=True
     )
+    total_classified = int(np.sum(counts))
     for class_id, count in zip(unique, counts):
         name = class_names.get(int(class_id), f"class_{class_id}")
-        pct  = 100 * count / np.sum(counts)
+        pct  = 100 * count / total_classified
         logger.info(f"    {class_id} {name:30s}: "
                     f"{count:,} px ({pct:.1f}%)")
 
@@ -488,14 +587,15 @@ def classify_scene(rf, stack, gt, proj, rows, cols,
     )
     ds_out.SetGeoTransform(gt)
     ds_out.SetProjection(proj)
-    band = ds_out.GetRasterBand(1)
-    band.WriteArray(labels_2d)
-    band.SetNoDataValue(nodata_val)
+    band_out = ds_out.GetRasterBand(1)
+    band_out.WriteArray(labels_2d)
+    band_out.SetNoDataValue(classif_nodata)
     ds_out.FlushCache()
     ds_out = None
-    logger.info(f"  Classification saved: {output_classif}")
+    logger.info(f"  Classification saved : {output_classif}")
 
     # Save confidence raster
+    # Use CONF_NODATA (-9999.0) as nodata — avoids NaN compatibility issues
     ds_conf = driver.Create(
         output_confidence, cols, rows, 1, gdal.GDT_Float32,
         options=["COMPRESS=DEFLATE", "TILED=YES", "BIGTIFF=IF_SAFER"]
@@ -504,40 +604,97 @@ def classify_scene(rf, stack, gt, proj, rows, cols,
     ds_conf.SetProjection(proj)
     band_conf = ds_conf.GetRasterBand(1)
     band_conf.WriteArray(conf_2d)
-    band_conf.SetNoDataValue(np.nan)
+    band_conf.SetNoDataValue(CONF_NODATA)
     ds_conf.FlushCache()
     ds_conf = None
-    logger.info(f"  Confidence saved: {output_confidence}")
+    logger.info(f"  Confidence saved     : {output_confidence}")
+    logger.info(f"  Confidence NoData    : {CONF_NODATA} "
+                f"(masked/unclassified pixels)")
 
     return labels_2d, conf_2d
 
 
-def save_colormap(class_names, output_dir, param_str, logger):
+def save_colormap(class_names, output_classif, output_dir,
+                  param_str, logger):
     """
-    Save a QGIS-compatible colour map file for the classification raster.
-    Load in QGIS via Layer Properties -> Symbology -> Load Color Map.
+    Save a QGIS .qml file for the classification raster.
     """
     colors = {
-        1: (255, 200, 0,   "Olive grove"),
-        2: (34,  139, 34,  "Cork/Holm oak montado"),
-        3: (0,   100, 200, "Eucalyptus"),
-        4: (100, 180, 100, "Other broadleaf"),
-        5: (180, 120, 60,  "Maritime pine"),
-        6: (200, 180, 130, "Shrubland"),
+        1: ("255,200,0",   "Olive grove"),
+        2: ("34,139,34",   "Cork/Holm oak montado"),
+        3: ("0,100,200",   "Eucalyptus"),
+        4: ("100,180,100", "Other broadleaf"),
+        5: ("180,120,60",  "Maritime pine"),
+        6: ("200,180,130", "Shrubland"),
     }
-    cmap_path = os.path.join(
-        output_dir, f"landscape_colormap_{param_str}.txt"
-    )
-    with open(cmap_path, "w") as f:
-        f.write("# QGIS colour map\n")
-        f.write("INTERPOLATION:EXACT\n")
-        for class_id, (r, g, b, name) in colors.items():
-            f.write(f"{class_id},{r},{g},{b},255,{name}\n")
-        f.write("-1,0,0,0,0,NoData\n")
 
-    logger.info(f"  QGIS colour map saved: {cmap_path}")
-    logger.info(f"  Load in QGIS: Layer Properties -> "
-                f"Symbology -> Load Color Map")
+    # Build palette entries
+    palette_items = ""
+    for class_id, (rgb, name) in colors.items():
+        r, g, b = rgb.split(",")
+        hex_color = "#{:02x}{:02x}{:02x}".format(int(r), int(g), int(b))
+        palette_items += (
+            f'          <paletteEntry value="{class_id}" '
+            f'color="{hex_color}" '
+            f'label="{name}" '
+            f'alpha="255"/>\n'
+        )
+    palette_items += (
+        '          <paletteEntry value="-1" '
+        'color="#000000" '
+        'label="NoData" '
+        'alpha="0"/>\n'
+    )
+
+    qml = f"""<!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
+                <qgis version="3.28" styleCategories="Symbology">
+                <pipe>
+                    <provider>
+                    <resampling zoomedInResamplingMethod="nearestNeighbour" zoomedOutResamplingMethod="nearestNeighbour" enabled="false" maxOversampling="2"/>
+                    </provider>
+                    <rasterrenderer type="paletted" opacity="1" alphaBand="-1" band="1" nodataColor="">
+                    <rasterTransparency/>
+                    <minMaxOrigin>
+                        <limits>None</limits>
+                        <extent>WholeRaster</extent>
+                        <statAccuracy>Estimated</statAccuracy>
+                        <cumulativeCutLower>0.02</cumulativeCutLower>
+                        <cumulativeCutUpper>0.98</cumulativeCutUpper>
+                        <stdDevFactor>2</stdDevFactor>
+                    </minMaxOrigin>
+                    <colorPalette>
+                {palette_items.rstrip()}
+                    </colorPalette>
+                    <colorramp type="randomcolors" name="[source]">
+                        <Option/>
+                    </colorramp>
+                    </rasterrenderer>
+                    <brightnesscontrast brightness="0" contrast="0" gamma="1"/>
+                    <huesaturation colorizeOn="0" colorizeRed="255" colorizeBlue="128" colorizeGreen="128" grayscaleMode="0" colorizeStrength="100" invertColors="0" saturation="0"/>
+                    <rasterresampler maxOversampling="2"/>
+                    <resamplingStage>resamplingFilter</resamplingStage>
+                </pipe>
+                </qgis>
+                """
+
+    qml_path = output_classif.replace(".tif", ".qml")
+    with open(qml_path, "w") as f:
+        f.write(qml)
+
+    logger.info(f"  QGIS style saved : {qml_path}")
+    logger.info(f"  Auto-loads when you open the .tif in QGIS")
+
+    # Also save a plain CSV legend for reference
+    legend_path = os.path.join(
+        output_dir, f"landscape_legend_{param_str}.csv"
+    )
+    with open(legend_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["class_id", "class_name", "color_rgb"])
+        for class_id, (rgb, name) in colors.items():
+            writer.writerow([class_id, name, rgb])
+        writer.writerow([-1, "NoData", "0,0,0"])
+    logger.info(f"  Legend CSV saved : {legend_path}")
 
 
 # ============================================================
@@ -545,12 +702,9 @@ def save_colormap(class_names, output_dir, param_str, logger):
 # ============================================================
 if __name__ == "__main__":
     args   = parse_args()
-    logger = get_logger("05d_landscape_classification")
+    logger = get_logger("04b_landscape_classification")
 
     try:
-        logger.info("=" * 60)
-        logger.info("STEP 05d: Landscape classification (Random Forest)")
-        logger.info("=" * 60)
         logger.info(f"Parameters:")
         logger.info(f"  n-estimators     = {args.n_estimators}")
         logger.info(f"  max-depth        = {args.max_depth}")
@@ -559,7 +713,13 @@ if __name__ == "__main__":
 
         param_str = (f"ne{args.n_estimators}"
                      f"_md{args.max_depth}"
-                     f"_msl{args.min_samples_leaf}")
+                     f"_msl{args.min_samples_leaf}"
+                     f"_mt{args.mask_threshold}")
+        
+        OUTPUT_CLASSIF    = os.path.join(OUTPUT_DIR,
+                                 f"landscape_classification_{param_str}.tif")
+        OUTPUT_CONFIDENCE = os.path.join(OUTPUT_DIR,
+                                 f"landscape_confidence_{param_str}.tif")
 
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         os.makedirs(OUTPUT_DIAG_DIR, exist_ok=True)
@@ -578,14 +738,23 @@ if __name__ == "__main__":
             INPUT_STACK, INPUT_INDICES, logger
         )
 
-        # 2. Extract training samples
+        # 2. Apply vegetation mask -> sets non-vegetation pixels to NaN
+        #    This single step handles both the vegetation extent and
+        #    the urban/civilisation exclusion zones
+        stack = apply_vegetation_mask(
+            stack, gt, rows, cols, INPUT_VEG_MASK,
+            args.mask_threshold, logger
+        )
+
+        # 3. Extract training samples from digitised polygons
+        #    NaN pixels (masked) are automatically skipped during extraction
         X, y = extract_training_samples(
             stack, gt, proj,
             INPUT_TRAINING, TRAINING_LAYER, TRAINING_FIELD,
             CLASS_MAP, CLASS_NAMES, logger
         )
 
-        # 3. Train Random Forest
+        # 4. Train Random Forest
         rf, accuracy = train_random_forest(
             X, y,
             args.n_estimators,
@@ -599,7 +768,8 @@ if __name__ == "__main__":
             logger
         )
 
-        # 4. Classify full scene
+        # 5. Classify full scene
+        #    Masked pixels remain NoData in output rasters
         labels_2d, conf_2d = classify_scene(
             rf, stack, gt, proj, rows, cols,
             CLASS_NAMES,
@@ -608,17 +778,14 @@ if __name__ == "__main__":
             logger
         )
 
-        # 5. Save QGIS colour map
-        save_colormap(CLASS_NAMES, OUTPUT_DIAG_DIR, param_str, logger)
+        # 6. Save QGIS colour map
+        save_colormap(CLASS_NAMES, OUTPUT_CLASSIF, OUTPUT_DIAG_DIR,
+              param_str, logger)
 
-        logger.info("=" * 60)
-        logger.info("Done!")
         logger.info(f"  Classification : {OUTPUT_CLASSIF}")
         logger.info(f"  Confidence     : {OUTPUT_CONFIDENCE}")
         logger.info(f"  Diagnostics    : {OUTPUT_DIAG_DIR}")
         logger.info(f"  Accuracy       : {accuracy*100:.1f}%")
-        logger.info("=" * 60)
-        logger.info("Next step: run 06_crown_classification.py")
 
     except Exception as e:
         logger.error(f"Script failed: {e}", exc_info=True)
