@@ -29,7 +29,7 @@ Usage:
     python scripts/02_treetop_detection_lidar.py
     python scripts/02_treetop_detection_lidar.py --radius 1.25 --minheight 2.0
     python scripts/02_treetop_detection_lidar.py --radius 2.5 --minheight 3.0 --mindist 2.0
-    python scripts/02_treetop_detection_lidar.py --radius_a 0.5 --radius_a 0.6 --minheight 2.0 --mindist 2.0
+    python scripts/02_treetop_detection_lidar.py --radius_a 1.5 --radius_b 0.1 --minheight 2.0 --mindist 2.5
 
 Arguments:
     --radius_a      float, Base radius (a) for variable window (default: 0.5)
