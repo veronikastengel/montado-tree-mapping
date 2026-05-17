@@ -506,6 +506,10 @@ def add_fields(layer, logger):
     # Landscape classification context from 04b Sentinel-2 RF
     add("landscape_class",    ogr.OFTInteger)
     add("landscape_conf",     ogr.OFTReal)
+    # One-hot encoded landscape class columns
+    for lc_id, lc_name in [(1,"olive"), (2,"montado"), (3,"eucalyptus"),
+                            (4,"broadleaf"), (5,"pine"), (6,"shrubland")]:
+        add(f"lc_{lc_name}", ogr.OFTInteger)
     logger.info("  Fields ready.")
 
 
@@ -590,6 +594,12 @@ def process_crowns(layer, xs_all, ys_all,
         )
         feature.SetField("landscape_class", lc)
         feature.SetField("landscape_conf",  round(lc_conf, 4))
+        # One-hot encode landscape class
+        lc_map = {1:"olive", 2:"montado", 3:"eucalyptus",
+                4:"broadleaf", 5:"pine", 6:"shrubland"}
+        for lc_id, lc_name in lc_map.items():
+            feature.SetField(f"lc_{lc_name}",
+                            1 if lc == lc_id else 0)
         if lc == -1:
             lc_no_data += 1
 
