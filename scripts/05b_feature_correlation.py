@@ -38,6 +38,13 @@ FEATURES = [
     "vert_dist_mid50",
     "vert_dist_bot25",
     "point_density",
+    "landscape_conf",
+    "lc_olive",
+    "lc_montado",
+    "lc_eucalyptus",
+    "lc_broadleaf",
+    "lc_pine",
+    "lc_shrubland"
 ]
 # ============================================================
 
