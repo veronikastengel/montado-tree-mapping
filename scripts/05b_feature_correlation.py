@@ -5,9 +5,9 @@ Computes and visualises feature correlations for crown classification features.
 Saves a heatmap image and a correlation matrix CSV.
 
 Usage:
-    python scripts/feature_correlation.py
-    python scripts/feature_correlation.py --crowns-layer crowns_treetops_w5_mh2.0_t0.001_c0.01_mh2.0
-    python scripts/feature_correlation.py --min-points 30 --method spearman
+    python scripts/05b_feature_correlation.py
+    python scripts/05b_feature_correlation.py --crowns-layer crowns_treetops_w5_mh2.0_t0.001_c0.01_mh2.0
+    python scripts/05b_feature_correlation.py --min-points 30 --method spearman
 """
 
 import os
@@ -254,7 +254,7 @@ def report_high_correlations(corr, features, threshold, logger):
 # ============================================================
 if __name__ == "__main__":
     args   = parse_args()
-    logger = get_logger("feature_correlation")
+    logger = get_logger("05b_feature_correlation")
 
     try:
         logger.info(f"Parameters:")
@@ -295,7 +295,6 @@ if __name__ == "__main__":
         logger.info(f"  Heatmap : {img_path}")
         logger.info("Tip: features with |r| > 0.8 are redundant.")
         logger.info("Consider dropping one from each highly correlated pair")
-        logger.info("before running 05_classification.py")
 
     except Exception as e:
         logger.error(f"Script failed: {e}", exc_info=True)
