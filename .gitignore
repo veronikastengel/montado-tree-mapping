@@ -7,9 +7,9 @@ data/processed/
 *.tiff
 
 # Keep outputs but not large rasters
-# outputs/maps/*.tif
-# outputs/classification/*.csv
-outputs/*
+outputs/maps/*.tif
+outputs/classification/*
+outputs/figures/*
 
 # Python
 __pycache__/
