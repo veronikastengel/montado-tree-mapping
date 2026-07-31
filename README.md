@@ -9,9 +9,28 @@ A end-to-end geospatial pipeline for automated detection, segmentation, and unsu
 
 ---
 
+## 🗺 Explore the results interactively
+
+**[→ Open the interactive map](https://veronikastengel.github.io/montado-tree-mapping/)**
+
+Click individual tree crowns, toggle between classification methods, and drag the comparison divider to see how GMM and UMAP+HDBSCAN differ across the landscape.
+
+![Screenshot of the interactive map showing tree crown classification across the montado landscape](docs/screenshot_map.png)
+
+The map shows:
+- **~19,000 individual tree crown polygons** styled by vegetation cluster
+- **Two unsupervised classification methods** to compare side by side
+- **Crown-level LiDAR metrics** (height, NDVI, rugosity) on click
+- **Tree top detection points** as an overlay
+- Toggle between satellite and dark basemap
+
+---
+
 ## Why this project
 
-Cork oak (*Quercus suber*) and holm oak (*Quercus rotundifolia*) are legally protected species in Portugal. Landowners are required to know where they are. Traditional field-based tree inventories in open montado are expensive and time-consuming. This project demonstrates what is achievable using only freely available remote sensing data and no field visits — a scalable approach applicable to any montado landscape in Portugal.
+Cork oak (*Quercus suber*) and holm oak (*Quercus rotundifolia*) are legally protected species in Portugal. Landowners are required to know where they are. Traditional field-based tree inventories in open montado are expensive and time-consuming.
+
+This is an **exploratory research project** with two goals: first, to investigate how far automated LiDAR-based methods can go in mapping individual trees without any field visits; second, to systematically compare multiple unsupervised classification approaches (K-Means, GMM, UMAP+HDBSCAN) and understand where each succeeds or breaks down on real ecological data.
 
 ---
 

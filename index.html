@@ -5,11 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Montado Tree Mapping — Alentejo, Portugal</title>
 
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-    <!-- Side-by-side compare plugin -->
-    <script src="https://unpkg.com/leaflet-side-by-side@2.2.0/leaflet-side-by-side.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-side-by-side@2.2.0/index.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/leaflet-side-by-side@2.2.0/layout.min.css" rel="stylesheet">
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -495,9 +492,11 @@
             <p>
                 The <em>montado</em> is Portugal's iconic open oak woodland — a UNESCO-recognised
                 agro-silvo-pastoral landscape where cork oak (<em>Quercus suber</em>) and holm oak
-                (<em>Quercus rotundifolia</em>) are legally protected. This project maps ~19,000
-                individual tree crowns across 4 km² using only freely available remote sensing data —
-                no field visits required.
+                (<em>Quercus rotundifolia</em>) are legally protected. This is an <strong>exploratory
+                research project</strong> investigating how far automated remote sensing methods can go
+                in mapping individual trees across 4 km² using only freely available data and no field
+                visits. A key goal was to test and compare multiple unsupervised classification
+                approaches and evaluate where each method succeeds or breaks down.
             </p>
 
             <div class="modal-steps">
@@ -652,13 +651,13 @@ function heightColor(h) {
 
 const PANEL_CONTENT = {
     hdbscan: {
-        title: 'UMAP + HDBSCAN (7 clusters)',
-        desc: 'Density-based clustering in UMAP-reduced feature space. The most robust result — ambiguous crowns labelled unclassified rather than forced into a cluster. 14 LiDAR + Sentinel-2 features.',
+        title: 'Tree classification — UMAP + HDBSCAN (7 clusters)',
+        desc: 'Unsupervised tree classification using UMAP dimensionality reduction and HDBSCAN density clustering. State-of-the-art method for high-dimensional ecological data — preserves non-linear structure. Ambiguous crowns are left unclassified rather than forced into a cluster. 14 LiDAR + Sentinel-2 features.',
         legendType: 'hdbscan'
     },
     gmm: {
-        title: 'GMM — 15 clusters',
-        desc: 'Gaussian Mixture Model with BIC-optimised component count. More granular — distinguishes age classes within pine, eucalyptus, and olive. Every crown receives a probabilistic assignment.',
+        title: 'Tree classification — GMM, 15 clusters',
+        desc: 'Unsupervised tree classification using Gaussian Mixture Model with BIC-optimised component count. More granular than HDBSCAN — distinguishes age classes within pine, eucalyptus, and olive. Every crown receives a soft probabilistic confidence score.',
         legendType: 'gmm'
     },
     height: {
@@ -679,7 +678,7 @@ const PANEL_CONTENT = {
         title: '+ Tree tops overlay',
         desc: 'Individual tree tops detected from 3D LiDAR point cloud. Each point is the highest class 5 return within a variable-radius search cylinder (radius scales with tree height).',
         legendType: 'simple',
-        legendItems: [{ color: '#f5a623', dot: true, label: 'Detected tree top' }]
+        legendItems: [{ color: '#40cc40', dot: true, label: 'Detected tree top' }]
     },
     compare: {
         title: 'Method comparison',
@@ -701,14 +700,14 @@ const map = L.map('map', {
 const darkBase = L.tileLayer(
     'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
     { attribution: '© OpenStreetMap © CARTO', subdomains: 'abcd', maxZoom: 20 }
-).addTo(map);
+);
 
 const satelliteBase = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     { attribution: '© Esri, Maxar, Earthstar Geographics', maxZoom: 20 }
-);
+).addTo(map);
 
-let usingSatellite = false;
+let usingSatellite = true;
 
 // ═══════════════════════════════════════════════════════════
 // STATE
@@ -780,7 +779,7 @@ function buildLegend(mode) {
     // Always show treetops legend item if active
     if (treetopsVisible && mode !== 'treetops') {
         el.innerHTML += `<div class="legend-section">Overlay</div>`;
-        el.innerHTML += legendItem('#f5a623', 'Tree top', true);
+        el.innerHTML += legendItem('#40cc40', 'Tree top', true);
     }
 }
 
@@ -885,10 +884,10 @@ function makeTreetops(data) {
         pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
             renderer: canvasRenderer,
             radius: 3,
-            fillColor: '#f5a623',
+            fillColor: '#40cc40',
             fillOpacity: 0.9,
-            color: '#000',
-            weight: 0.5
+            color: '#1a6a1a',
+            weight: 0.8
         }),
         onEachFeature: (feature, layer) => {
             const p = feature.properties;
@@ -929,11 +928,18 @@ function showLayer(mode) {
         if (crownsData) {
             swipeLeft  = makeCrowns(crownsData, 'gmm').addTo(map);
             swipeRight = makeCrowns(crownsData, 'hdbscan').addTo(map);
-            try {
-                swipeControl = L.control.sideBySide(swipeLeft, swipeRight).addTo(map);
-            } catch(e) {
-                console.warn('sideBySide not available:', e);
+
+            if (typeof L.control.sideBySide === 'function') {
+                try {
+                    swipeControl = L.control.sideBySide(swipeLeft, swipeRight).addTo(map);
+                } catch(e) {
+                    console.warn('sideBySide error:', e);
+                    // Fallback: just show both layers without divider
+                }
+            } else {
+                console.warn('leaflet-side-by-side not loaded — showing both layers without divider');
             }
+
             document.getElementById('swipe-bar').classList.add('visible');
             compareActive = true;
         }
@@ -1019,11 +1025,15 @@ document.getElementById('basemap-btn').addEventListener('click', () => {
         darkBase.addTo(map);
         darkBase.bringToBack();
         usingSatellite = false;
+        document.getElementById('basemap-btn').textContent = '🌑';
+        document.getElementById('basemap-btn').title = 'Switch to satellite basemap';
     } else {
         map.removeLayer(darkBase);
         satelliteBase.addTo(map);
         satelliteBase.bringToBack();
         usingSatellite = true;
+        document.getElementById('basemap-btn').textContent = '🛰';
+        document.getElementById('basemap-btn').title = 'Switch to dark basemap';
     }
 });
 
