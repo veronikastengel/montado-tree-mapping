@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Montado Tree Mapping — Alentejo, Portugal</title>
 
-    <script src="https://cdn.jsdelivr.net/npm/leaflet-side-by-side@2.2.0/index.min.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/leaflet-side-by-side@2.2.0/layout.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="scripts/leaflet-side-by-side.js"></script>
+    <!--<script src="https://unpkg.com/leaflet-side-by-side@2.2.0/files/index.js"></script>-->
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -465,10 +467,35 @@
         .leaflet-control-attribution a { color: rgba(196,185,154,0.7) !important; }
 
         /* Swipe divider */
+        .leaflet-sbs {
+            position: absolute;
+            top: 0; bottom: 0; left: 0; right: 0;
+            pointer-events: none;
+            z-index: 800;
+        }
+        .leaflet-sbs-range {
+            position: absolute;
+            top: 50%;
+            width: 100%;
+            z-index: 999;
+            pointer-events: auto;
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            margin: 0;
+            padding: 0;
+            height: 42px;
+            transform: translateY(-50%);
+            cursor: ew-resize;
+        }
         .leaflet-sbs-divider {
-            background: var(--amber) !important;
-            width: 3px !important;
-            box-shadow: 0 0 8px rgba(196,154,40,0.5) !important;
+            position: absolute;
+            top: 0; bottom: 0;
+            width: 3px;
+            background: var(--amber);
+            pointer-events: none;
+            z-index: 999;
+            box-shadow: 0 0 8px rgba(196,154,40,0.6);
         }
     </style>
 </head>
@@ -490,7 +517,7 @@
         </div>
         <div id="modal-body">
             <p>
-                The <em>montado</em> is Portugal's iconic open oak woodland — a UNESCO-recognised
+                The <em>montado</em> is Portugal's open oak woodland — a UNESCO-recognised
                 agro-silvo-pastoral landscape where cork oak (<em>Quercus suber</em>) and holm oak
                 (<em>Quercus rotundifolia</em>) are legally protected. This is an <strong>exploratory
                 research project</strong> investigating how far automated remote sensing methods can go
@@ -693,7 +720,7 @@ const PANEL_CONTENT = {
 
 const map = L.map('map', {
     center: [39.1968, -7.288],
-    zoom: 14,
+    zoom: 15,
     zoomControl: true,
 });
 
@@ -934,7 +961,7 @@ function showLayer(mode) {
                     swipeControl = L.control.sideBySide(swipeLeft, swipeRight).addTo(map);
                 } catch(e) {
                     console.warn('sideBySide error:', e);
-                    // Fallback: just show both layers without divider
+                    // Fallback: just show 1 layer without divider
                 }
             } else {
                 console.warn('leaflet-side-by-side not loaded — showing both layers without divider');
