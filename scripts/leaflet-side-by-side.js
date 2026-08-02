@@ -95,10 +95,10 @@ L.Control.SideBySide = L.Control.extend({
       return this
     }
     if (this._leftLayer) {
-      this._leftLayer.getContainer().style.clip = ''
+      this._leftLayer.getPane().style.clip = ''
     }
     if (this._rightLayer) {
-      this._rightLayer.getContainer().style.clip = ''
+      this._rightLayer.getPane().style.clip = ''
     }
     this._removeEvents()
     L.DomUtil.remove(this._container)
@@ -132,10 +132,10 @@ L.Control.SideBySide = L.Control.extend({
     var clipLeft = 'rect(' + [nw.y, clipX, se.y, nw.x].join('px,') + 'px)'
     var clipRight = 'rect(' + [nw.y, se.x, se.y, clipX].join('px,') + 'px)'
     if (this._leftLayer) {
-      this._leftLayer.getContainer().style.clip = clipLeft
+      this._leftLayer.getPane().style.clip = clipLeft
     }
     if (this._rightLayer) {
-      this._rightLayer.getContainer().style.clip = clipRight
+      this._rightLayer.getPane().style.clip = clipRight
     }
   },
 
@@ -174,7 +174,10 @@ L.Control.SideBySide = L.Control.extend({
     map.on('move', this._updateClip, this)
     map.on('layeradd layerremove', this._updateLayers, this)
     on(range, getRangeEvent(range), this._updateClip, this)
-    on(range, L.Browser.touch ? 'touchstart' : 'mousedown', cancelMapDrag, this)
+    on(range, L.Browser.touch ? 'touchstart' : 'mousedown', function(e) {
+      L.DomEvent.stopPropagation(e);
+      cancelMapDrag.call(this, e);
+    }, this)
     on(range, L.Browser.touch ? 'touchend' : 'mouseup', uncancelMapDrag, this)
   },
 
