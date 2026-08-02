@@ -469,29 +469,70 @@
         /* Swipe divider */
         .leaflet-sbs {
             position: absolute;
-            top: 0; bottom: 0; left: 0; right: 0;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
             pointer-events: none;
-            z-index: 800;
+            z-index: 999;
         }
+        /* leaflet-side-by-side range CSS — manually injected since bundled cssify doesn't work in browser */
         .leaflet-sbs-range {
             position: absolute;
             top: 50%;
+            transform: translateY(-50%);
             width: 100%;
             z-index: 999;
-            pointer-events: auto;
             -webkit-appearance: none;
             appearance: none;
-            background: transparent;
-            margin: 0;
+            display: block;
+            height: 44px;
             padding: 0;
-            height: 42px;
-            transform: translateY(-50%);
-            cursor: ew-resize;
+            margin: 0;
+            border: 0;
+            background: transparent;
+            cursor: pointer;
+            pointer-events: all;
         }
+        .leaflet-sbs-range::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            background: var(--amber);
+            height: 40px;
+            width: 40px;
+            border-radius: 20px;
+            cursor: ew-resize;
+            pointer-events: auto;
+            border: 2px solid white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+        }
+        .leaflet-sbs-range::-moz-range-thumb {
+            background: var(--amber);
+            height: 40px;
+            width: 40px;
+            border-radius: 20px;
+            cursor: ew-resize;
+            pointer-events: auto;
+            border: 2px solid white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+        }
+        .leaflet-sbs-range::-ms-thumb {
+            background: var(--amber);
+            height: 40px;
+            width: 40px;
+            border-radius: 20px;
+            cursor: ew-resize;
+            pointer-events: auto;
+            border: 2px solid white;
+        }
+        .leaflet-sbs-range:focus { outline: none !important; }
+        .leaflet-sbs-range::-moz-focus-outer { border: 0; }
         .leaflet-sbs-divider {
             position: absolute;
-            top: 0; bottom: 0;
-            width: 3px;
+            top: 0;
+            bottom: 0;
+            left: 50%;
+            margin-left: -2px;
+            width: 4px;
             background: var(--amber);
             pointer-events: none;
             z-index: 999;
@@ -577,8 +618,8 @@
 
     <div id="layer-nav">
         <!-- Primary classification views -->
-        <button class="layer-btn active" data-layer="hdbscan">UMAP+HDBSCAN</button>
-        <button class="layer-btn" data-layer="gmm">GMM 15-cluster</button>
+        <button class="layer-btn active" data-layer="gmm">GMM 15-cluster</button>
+        <button class="layer-btn" data-layer="hdbscan">UMAP+HDBSCAN</button>
         <button class="layer-btn" data-layer="height">Crown height</button>
         <button class="layer-btn" data-layer="ndvi">Crown NDVI</button>
 
@@ -614,15 +655,15 @@
 // ═══════════════════════════════════════════════════════════
 
 const HDBSCAN_COLORS = {
-    '-2': { color: '#444444', label: 'Filtered (edge / low data)' },
-    '-1': { color: '#777777', label: 'Unclassified (ambiguous)' },
      '0': { color: '#d4a020', label: 'Olive grove' },
-     '1': { color: '#5b9fd4', label: 'Eucalyptus (mature)' },
-     '2': { color: '#9c8060', label: 'Shrubland' },
-     '3': { color: '#205c20', label: 'Maritime pine' },
-     '4': { color: '#3a9a3a', label: 'Montado (oak woodland)' },
+     '1': { color: '#3a9a3a', label: 'Montado (oak woodland)' },
+     '2': { color: '#7c8845', label: 'Transition / mixed' },
+     '3': { color: '#9c8060', label: 'Shrubland' },
+     '4': { color: '#5b9fd4', label: 'Eucalyptus (mature)' },
      '5': { color: '#a8cce8', label: 'Eucalyptus (low NDVI)' },
-     '6': { color: '#888888', label: 'Transition / mixed' },
+     '6': { color: '#205c20', label: 'Maritime pine' },
+     '-2': { color: '#444444', label: 'Filtered (edge / low data)' },
+    '-1': { color: '#777777', label: 'Unclassified (ambiguous)' },
 };
 
 const GMM_COLORS = {
@@ -641,7 +682,7 @@ const GMM_COLORS = {
     '11': { color: '#80b8e0', label: 'Eucalyptus — variant' },
     '12': { color: '#c0a818', label: 'Olive — low NDVI' },
     '13': { color: '#e8c858', label: 'Olive — short/core' },
-    '14': { color: '#808a80', label: 'Transition / mixed' },
+    '14': { color: '#7c8845', label: 'Transition / mixed' },
 };
 
 // NDVI colour — calibrated to actual data range -0.1 to 0.56
@@ -723,6 +764,8 @@ const map = L.map('map', {
     zoom: 15,
     zoomControl: true,
 });
+map.createPane('left')
+map.createPane('right')
 
 const darkBase = L.tileLayer(
     'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -889,20 +932,50 @@ function buildPopup(p) {
 // LAYER FACTORIES
 // ═══════════════════════════════════════════════════════════
 
-function makeCrowns(data, mode) {
-    return L.geoJSON(data, {
-        renderer: canvasRenderer,
-        style: f => styleForMode(f, mode),
-        onEachFeature: (feature, layer) => {
-            layer.bindPopup(buildPopup(feature.properties), { maxWidth: 270 });
-            layer.on('mouseover', function() {
-                this.setStyle({ weight: 2, color: 'rgba(255,255,255,0.7)' });
-            });
-            layer.on('mouseout', function() {
-                this.setStyle(styleForMode(feature, mode));
-            });
-        }
-    });
+function makeCrowns(data, mode, compareOn) {
+    if (compareOn === 0) {
+        return L.geoJSON(data, {
+            renderer: canvasRenderer,
+            style: f => styleForMode(f, mode),
+            onEachFeature: (feature, layer) => {
+                layer.bindPopup(buildPopup(feature.properties), { maxWidth: 270 });
+                layer.on('mouseover', function() {
+                    this.setStyle({ weight: 2, color: 'rgba(255,255,255,0.7)' });
+                });
+                layer.on('mouseout', function() {
+                    this.setStyle(styleForMode(feature, mode));
+                });
+            }
+        });
+    } else if (compareOn === 1 && mode === 'gmm') {
+        return L.geoJSON(data, {
+            pane: 'left',
+            style: f => styleForMode(f, mode),
+            onEachFeature: (feature, layer) => {
+                layer.bindPopup(buildPopup(feature.properties), { maxWidth: 270 });
+                layer.on('mouseover', function() {
+                    this.setStyle({ weight: 2, color: 'rgba(255,255,255,0.7)' });
+                });
+                layer.on('mouseout', function() {
+                    this.setStyle(styleForMode(feature, mode));
+                });
+            }
+        });
+    } else if (compareOn === 1 && mode === 'hdbscan') {
+        return L.geoJSON(data, {
+            pane: 'right',
+            style: f => styleForMode(f, mode),
+            onEachFeature: (feature, layer) => {
+                layer.bindPopup(buildPopup(feature.properties), { maxWidth: 270 });
+                layer.on('mouseover', function() {
+                    this.setStyle({ weight: 2, color: 'rgba(255,255,255,0.7)' });
+                });
+                layer.on('mouseout', function() {
+                    this.setStyle(styleForMode(feature, mode));
+                });
+            }
+        });
+    }
 }
 
 function makeTreetops(data) {
@@ -953,8 +1026,8 @@ function showLayer(mode) {
         if (crownsLayer) { map.removeLayer(crownsLayer); crownsLayer = null; }
 
         if (crownsData) {
-            swipeLeft  = makeCrowns(crownsData, 'gmm').addTo(map);
-            swipeRight = makeCrowns(crownsData, 'hdbscan').addTo(map);
+            swipeLeft  = makeCrowns(crownsData, 'gmm', 1).addTo(map);
+            swipeRight = makeCrowns(crownsData, 'hdbscan', 1).addTo(map);
 
             if (typeof L.control.sideBySide === 'function') {
                 try {
@@ -987,7 +1060,7 @@ function showLayer(mode) {
     updateButtons(mode);
 
     if (crownsData && map.getZoom() >= POLYGON_ZOOM) {
-        crownsLayer = makeCrowns(crownsData, mode).addTo(map);
+        crownsLayer = makeCrowns(crownsData, mode, 0).addTo(map);
         // Keep treetops on top
         if (treetopsLayer) treetopsLayer.bringToFront();
         document.getElementById('zoom-notice').classList.remove('visible');
@@ -1032,7 +1105,7 @@ map.on('zoomend', () => {
     const zoomOk = map.getZoom() >= POLYGON_ZOOM;
 
     if (zoomOk && !crownsLayer && crownsData) {
-        crownsLayer = makeCrowns(crownsData, activeMode).addTo(map);
+        crownsLayer = makeCrowns(crownsData, activeMode, 0).addTo(map);
         if (treetopsLayer) treetopsLayer.bringToFront();
         document.getElementById('zoom-notice').classList.remove('visible');
     } else if (!zoomOk && crownsLayer) {
@@ -1084,9 +1157,9 @@ async function loadData() {
 
         document.getElementById('modal-overlay').style.display = 'flex';
 
-        updatePanel('hdbscan');
+        updatePanel('gmm');
         if (map.getZoom() >= POLYGON_ZOOM) {
-            crownsLayer = makeCrowns(crownsData, 'hdbscan').addTo(map);
+            crownsLayer = makeCrowns(crownsData, 'gmm', 0).addTo(map);
         } else {
             document.getElementById('zoom-notice').classList.add('visible');
         }
