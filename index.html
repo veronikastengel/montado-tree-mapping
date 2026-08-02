@@ -7,7 +7,8 @@
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="scripts/leaflet-side-by-side.js"></script>
+    <!--<script src="scripts/leaflet-side-by-side.js"></script>-->
+    <script src="scripts/leaflet-side-by-side-updated.js"></script>
     <!--<script src="https://unpkg.com/leaflet-side-by-side@2.2.0/files/index.js"></script>-->
 
     <!-- Google Fonts -->
@@ -466,77 +467,30 @@
 
         .leaflet-control-attribution a { color: rgba(196,185,154,0.7) !important; }
 
-        /* Swipe divider */
-        .leaflet-sbs {
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            pointer-events: none;
-            z-index: 999;
-        }
-        /* leaflet-side-by-side range CSS — manually injected since bundled cssify doesn't work in browser */
-        .leaflet-sbs-range {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 100%;
-            z-index: 999;
-            -webkit-appearance: none;
-            appearance: none;
-            display: block;
-            height: 44px;
-            padding: 0;
-            margin: 0;
-            border: 0;
-            background: transparent;
-            cursor: pointer;
-            pointer-events: all;
-        }
+        /* ── Leaflet side-by-side compare ── */
         .leaflet-sbs-range::-webkit-slider-thumb {
-            -webkit-appearance: none;
             background: var(--amber);
-            height: 40px;
-            width: 40px;
-            border-radius: 20px;
-            cursor: ew-resize;
-            pointer-events: auto;
-            border: 2px solid white;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            background-image: url(range-icon.png);
+            background-position: 50% 50%;
+            background-repeat: no-repeat;
+            background-size: 40px 40px;
         }
         .leaflet-sbs-range::-moz-range-thumb {
             background: var(--amber);
-            height: 40px;
-            width: 40px;
-            border-radius: 20px;
-            cursor: ew-resize;
-            pointer-events: auto;
-            border: 2px solid white;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            background-image: url(range-icon.png);
+            background-position: 50% 50%;
+            background-repeat: no-repeat;
+            background-size: 40px 40px;
         }
         .leaflet-sbs-range::-ms-thumb {
             background: var(--amber);
-            height: 40px;
-            width: 40px;
-            border-radius: 20px;
-            cursor: ew-resize;
-            pointer-events: auto;
-            border: 2px solid white;
+            background-image: url(range-icon.png);
+            background-position: 50% 50%;
+            background-repeat: no-repeat;
+            background-size: 40px 40px;
         }
-        .leaflet-sbs-range:focus { outline: none !important; }
-        .leaflet-sbs-range::-moz-focus-outer { border: 0; }
         .leaflet-sbs-divider {
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            left: 50%;
-            margin-left: -2px;
-            width: 4px;
             background: var(--amber);
-            pointer-events: none;
-            z-index: 999;
-            box-shadow: 0 0 8px rgba(196,154,40,0.6);
         }
     </style>
 </head>
@@ -655,34 +609,34 @@
 // ═══════════════════════════════════════════════════════════
 
 const HDBSCAN_COLORS = {
-     '0': { color: '#d4a020', label: 'Olive grove' },
-     '1': { color: '#3a9a3a', label: 'Montado (oak woodland)' },
-     '2': { color: '#7c8845', label: 'Transition / mixed' },
-     '3': { color: '#9c8060', label: 'Shrubland' },
-     '4': { color: '#5b9fd4', label: 'Eucalyptus (mature)' },
-     '5': { color: '#a8cce8', label: 'Eucalyptus (low NDVI)' },
-     '6': { color: '#205c20', label: 'Maritime pine' },
-     '-2': { color: '#444444', label: 'Filtered (edge / low data)' },
-    '-1': { color: '#777777', label: 'Unclassified (ambiguous)' },
+    '0':  { color: '#bfa830', label: 'Olive grove' },         
+    '4':  { color: '#a39838', label: 'Olive — low NDVI' },                 
+    '6':  { color: '#4ad05a', label: 'Montado (oak woodland)' },                
+    '2':  { color: '#788c52', label: 'Transition / mixed' },       
+    '1':  { color: '#5b9fd4', label: 'Eucalyptus' },               
+    '5':  { color: '#7bc0e0', label: 'Eucalyptus (low NDVI)' },     
+    '3':  { color: '#0d381e', label: 'Maritime pine' },              
+    '-2': { color: '#444444', label: 'Filtered (edge / low data)' },  
+    '-1': { color: '#777777', label: 'Unclassified (ambiguous)' }    
 };
 
 const GMM_COLORS = {
-    '-1': { color: '#444444', label: 'Filtered' },
-     '0': { color: '#4aaa4a', label: 'Montado — young oak' },
-     '1': { color: '#2d8a2d', label: 'Montado — medium A' },
-     '2': { color: '#d4a020', label: 'Olive — medium' },
-     '3': { color: '#5b9fd4', label: 'Eucalyptus — medium' },
-     '4': { color: '#205c20', label: 'Pine — young' },
-     '5': { color: '#9c8060', label: 'Shrubland — low' },
-     '6': { color: '#c09040', label: 'Shrubland — tall' },
-     '7': { color: '#204080', label: 'Pine — mature' },
-     '8': { color: '#b87820', label: 'Montado — medium B' },
-     '9': { color: '#1e6e1e', label: 'Montado — medium C' },
-    '10': { color: '#60c060', label: 'Montado — medium D' },
-    '11': { color: '#80b8e0', label: 'Eucalyptus — variant' },
-    '12': { color: '#c0a818', label: 'Olive — low NDVI' },
-    '13': { color: '#e8c858', label: 'Olive — short/core' },
-    '14': { color: '#7c8845', label: 'Transition / mixed' },
+    '2':  { color: '#bfa830', label: 'Olive — medium' },      // Warm golden-olive
+    '12': { color: '#a39838', label: 'Olive — low NDVI' },    // Muted, dryer sage-olive
+    '13': { color: '#dcd058', label: 'Olive — short/core' },  // Lighter, brighter olive
+    '0':  { color: '#82e682', label: 'Montado — young oak' },  // Very light, fresh spring green
+    '1':  { color: '#60db60', label: 'Montado — medium A' },   // Light mid-green
+    '8':  { color: '#4ad05a', label: 'Montado — medium B' },   // Vibrant leafy green
+    '9':  { color: '#38b555', label: 'Montado — medium C' },   // Balanced green (lighter than pine)
+    '10': { color: '#9aeb7a', label: 'Montado — medium D' },   // Pale lime-green oak
+    '3':  { color: '#4090c0', label: 'Eucalyptus — medium' },  // Slate blue
+    '11': { color: '#7bc0e0', label: 'Eucalyptus — variant' }, // Light soft blue
+    '4':  { color: '#1a5e30', label: 'Pine — young' },        // Dark evergreen
+    '7':  { color: '#0d381e', label: 'Pine — mature' },       // Very deep conifer green
+    '5':  { color: '#9c8060', label: 'Shrubland — low' },     // Desaturated taupe
+    '6':  { color: '#c09040', label: 'Shrubland — tall' },    // Warm ochre / mustard
+    '14': { color: '#788c52', label: 'Transition / mixed' },  // Muted khaki / dry green
+    '-1': { color: '#444444', label: 'Filtered' }             // Charcoal grey
 };
 
 // NDVI colour — calibrated to actual data range -0.1 to 0.56
@@ -810,9 +764,10 @@ function buildLegend(mode) {
     if (!c) return;
 
     if (c.legendType === 'hdbscan') {
-        Object.entries(HDBSCAN_COLORS).forEach(([k, v]) => {
-            el.innerHTML += legendItem(v.color, v.label);
-        });
+        ['0','4'].forEach(k => el.innerHTML += legendItem(HDBSCAN_COLORS[k].color, HDBSCAN_COLORS[k].label));
+        ['6','2'].forEach(k => el.innerHTML += legendItem(HDBSCAN_COLORS[k].color, HDBSCAN_COLORS[k].label));
+        ['1','5','3'].forEach(k => el.innerHTML += legendItem(HDBSCAN_COLORS[k].color, HDBSCAN_COLORS[k].label));
+        ['-2','-1'].forEach(k => el.innerHTML += legendItem(HDBSCAN_COLORS[k].color, HDBSCAN_COLORS[k].label));
     } else if (c.legendType === 'gmm') {
         el.innerHTML += `<div class="legend-section">Olive</div>`;
         ['13','2','12'].forEach(k => el.innerHTML += legendItem(GMM_COLORS[k].color, GMM_COLORS[k].label));
@@ -837,13 +792,15 @@ function buildLegend(mode) {
         });
     } else if (c.legendType === 'compare') {
         el.innerHTML += `<div class="legend-section">Left — GMM</div>`;
-        el.innerHTML += legendItem(GMM_COLORS['1'].color, 'Montado');
+        el.innerHTML += legendItem(GMM_COLORS['9'].color, 'Montado');
         el.innerHTML += legendItem(GMM_COLORS['2'].color, 'Olive');
         el.innerHTML += legendItem(GMM_COLORS['3'].color, 'Eucalyptus');
+        el.innerHTML += legendItem(GMM_COLORS['7'].color, 'Maritime pine');
         el.innerHTML += `<div class="legend-section">Right — HDBSCAN</div>`;
-        el.innerHTML += legendItem(HDBSCAN_COLORS['4'].color, 'Montado');
+        el.innerHTML += legendItem(HDBSCAN_COLORS['6'].color, 'Montado');
         el.innerHTML += legendItem(HDBSCAN_COLORS['0'].color, 'Olive');
         el.innerHTML += legendItem(HDBSCAN_COLORS['1'].color, 'Eucalyptus');
+        el.innerHTML += legendItem(HDBSCAN_COLORS['3'].color, 'Maritime pine');
     }
 
     // Always show treetops legend item if active
