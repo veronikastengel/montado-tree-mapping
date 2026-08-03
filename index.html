@@ -112,6 +112,70 @@
         .layer-btn.secondary { border-style: dashed; }
         .layer-btn.secondary.active { background: #3a6a8a; border-color: #3a6a8a; border-style: solid; }
 
+        #btn-treetops:disabled {
+            cursor: not-allowed;
+            pointer-events: auto; /* keep tooltip visible on hover */
+        }
+
+        /* ── Opacity control ── */
+        #opacity-wrap {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: 4px;
+            padding-left: 10px;
+            border-left: 1px solid rgba(196,185,154,0.2);
+            flex-shrink: 0;
+        }
+
+        #opacity-label {
+            font-size: 10px;
+            color: var(--scrub);
+            white-space: nowrap;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        #opacity-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 80px;
+            height: 3px;
+            border-radius: 2px;
+            background: rgba(196,185,154,0.3);
+            outline: none;
+            cursor: pointer;
+        }
+
+        #opacity-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: var(--amber);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        }
+
+        #opacity-slider::-moz-range-thumb {
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: var(--amber);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        }
+
+        #opacity-value {
+            font-size: 10px;
+            color: var(--limestone);
+            min-width: 28px;
+            text-align: right;
+        }
+
         #topbar-right {
             margin-left: auto;
             display: flex;
@@ -504,61 +568,59 @@
 </div>
 
 <!-- Modal -->
-<div id="modal-overlay" style="display:none;">
+ <div id="modal-overlay" style="display:none;">
     <div id="modal">
         <div id="modal-header">
             <h2>Montado Tree Mapping</h2>
-            <p class="subtitle">Automated individual tree detection &amp; vegetation classification — Alentejo, Portugal</p>
+            <p class="subtitle">Automated individual tree detection & vegetation classification — Alentejo, Portugal</p>
         </div>
         <div id="modal-body">
-            <p>
-                The <em>montado</em> is Portugal's open oak woodland — a UNESCO-recognised
-                agro-silvo-pastoral landscape where cork oak (<em>Quercus suber</em>) and holm oak
-                (<em>Quercus rotundifolia</em>) are legally protected. This is an <strong>exploratory
-                research project</strong> investigating how far automated remote sensing methods can go
-                in mapping individual trees across 4 km² using only freely available data and no field
-                visits. A key goal was to test and compare multiple unsupervised classification
-                approaches and evaluate where each method succeeds or breaks down.
+            <p style="font-size:15px;line-height:1.7;color:#222;margin-bottom:14px;">
+                This map shows <strong>~19,000 individual trees</strong> detected automatically
+                from laser scanning data across 4 km² of Portuguese countryside — without anyone
+                setting foot in the field. Every coloured shape is one tree crown.
+            </p>
+            <p style="font-size:13px;line-height:1.7;color:#444;margin-bottom:14px;">
+                The landscape is <em>montado</em> — Portugal's open oak woodland, where cork oak
+                and holm oak are legally protected. The question driving this project:
+                <strong>can we automatically tell which tree is which, purely from remote sensing data?</strong>
             </p>
 
             <div class="modal-steps">
                 <div class="step-card">
-                    <div class="step-num">Step 1 — Tree tops</div>
-                    <div class="step-text">Individual tree tops detected directly from 3D LiDAR point cloud using variable-radius local maxima search</div>
+                    <div class="step-num">1 — Find the trees</div>
+                    <div class="step-text">Use LiDAR data (Aircraft laser pulses) to locate each tree top</div>
                 </div>
                 <div class="step-card">
-                    <div class="step-num">Step 2 — Crown segments</div>
-                    <div class="step-text">Marker-controlled watershed segmentation delineates individual crown polygons seeded from the detected tree tops</div>
+                    <div class="step-num">2 — Draw the crowns</div>
+                    <div class="step-text">Working outward from each tree top, an algorithm traces the edges of each crown</div>
                 </div>
                 <div class="step-card">
-                    <div class="step-num">Step 3 — Landscape context</div>
-                    <div class="step-text">Sentinel-2 imagery classified by Random Forest into 6 landscape types: montado, olive, eucalyptus, pine, shrubland, other broadleaf</div>
+                    <div class="step-num">3 — Measure each tree</div>
+                    <div class="step-text">14 measurements per tree: height, shape, leaf density, light reflectance, ...</div>
                 </div>
                 <div class="step-card">
-                    <div class="step-num">Step 4 — Tree classification</div>
-                    <div class="step-text">14 LiDAR + spectral features per crown classified by GMM (15 clusters) and UMAP+HDBSCAN (7 clusters) — compare both on the map</div>
+                    <div class="step-num">4 — Classify by similarity</div>
+                    <div class="step-text">Use different machine learning methods to group trees by how alike they are</div>
                 </div>
             </div>
 
             <div class="gap-notice">
-                ⚠ <strong>Validation gap:</strong> Cluster labels are ecologically interpreted
-                but not field-validated. Cork oak vs holm oak could not be reliably distinguished
-                with unsupervised methods — consistent with published remote sensing literature
-                showing these species require hyperspectral imagery or supervised classification
-                with ground-truth samples.
+                ⚠ <strong>Result:</strong> Broad types separated well — olive groves, eucalyptus,
+                pine. But cork oak vs holm oak proved too subtle without field data to guide the
+                algorithm. <br>
+                The code and full methodology are open on GitHub.
             </div>
-
-            <p class="data-credit">
-                LiDAR &amp; terrain models: © DGT — Direção-Geral do Território, Portugal. CC-BY-4.0.<br>
-                Sentinel-2 L2A: ESA Copernicus Data Space. CC-BY-SA-3.0 IGO.<br>
-                Developed with assistance from Claude AI (Anthropic).
+            <p class="data-credit" style="font-size:10px;color:#999;line-height:1.5;margin-top:10px;">
+                Laser scanning data © DGT Portugal CC-BY-4.0 · Satellite imagery © ESA Copernicus CC-BY-SA-3.0 · Assisted by Claude AI (Anthropic)<br><br>
                 <a href="https://github.com/veronikastengel/montado-tree-mapping" target="_blank"
-                   style="color:var(--canopy);font-weight:600;">View code on GitHub →</a>
+                   style="color:var(--canopy);font-weight:600;">Full methodology on GitHub →</a>
             </p>
+            
         </div>
         <div id="modal-footer">
-            <button id="start-btn">Start exploring →</button>
-            <small>Use the buttons above the map<br>to navigate through the analysis steps</small>
+            <button id="start-btn">Explore the map →</button>
+            <small>Use the buttons above to switch between views</small>
         </div>
     </div>
 </div>
@@ -571,15 +633,19 @@
     <h1>Montado Tree Mapping <span>— Alentejo</span></h1>
 
     <div id="layer-nav">
-        <!-- Primary classification views -->
-        <button class="layer-btn active" data-layer="gmm">GMM 15-cluster</button>
-        <button class="layer-btn" data-layer="hdbscan">UMAP+HDBSCAN</button>
-        <button class="layer-btn" data-layer="height">Crown height</button>
+        <button class="layer-btn active" data-layer="height">Crown height</button>
         <button class="layer-btn" data-layer="ndvi">Crown NDVI</button>
-
-        <!-- Secondary toggles -->
+        <button class="layer-btn" data-layer="gmm">GMM 15-cluster</button>
+        <button class="layer-btn" data-layer="hdbscan">UMAP+HDBSCAN</button>
         <button class="layer-btn secondary" data-layer="treetops" id="btn-treetops">+ Tree tops</button>
         <button class="layer-btn" data-layer="compare">⇌ Compare</button>
+
+        <!-- Opacity control -->
+        <div id="opacity-wrap">
+            <label for="opacity-slider" id="opacity-label">Opacity</label>
+            <input type="range" id="opacity-slider" min="0" max="100" value="78" step="1">
+            <span id="opacity-value">78%</span>
+        </div>
     </div>
 
     <div id="topbar-right">
@@ -674,24 +740,24 @@ function heightColor(h) {
 const PANEL_CONTENT = {
     hdbscan: {
         title: 'Tree classification — UMAP + HDBSCAN (7 clusters)',
-        desc: 'Unsupervised tree classification using UMAP dimensionality reduction and HDBSCAN density clustering. State-of-the-art method for high-dimensional ecological data — preserves non-linear structure. Ambiguous crowns are left unclassified rather than forced into a cluster. 14 LiDAR + Sentinel-2 features.',
+        desc: 'A machine learning method called UMAP+HDBSCAN grouped trees into 7 clusters by finding natural density patterns in the data. This is more conservative than the statistical method — trees that don\'t clearly belong anywhere are left uncoloured rather than forced into a group. This results in fewer, cleaner clusters; distinguishing oak species proved too subtle without field data to guide the algorithm.',        
         legendType: 'hdbscan'
     },
     gmm: {
         title: 'Tree classification — GMM, 15 clusters',
-        desc: 'Unsupervised tree classification using Gaussian Mixture Model with BIC-optimised component count. More granular than HDBSCAN — distinguishes age classes within pine, eucalyptus, and olive. Every crown receives a soft probabilistic confidence score.',
+        desc: 'A statistical method called Gaussian Mixture Modelling grouped all ~19,000 trees into 15 clusters based on 14 measurements per tree: height, shape, reflectance, canopy density and more. Broad types like olive grove, pine plantation and eucalyptus separate well — distinguishing oak species proved too subtle without field data to guide the algorithm.',        
         legendType: 'gmm'
     },
     height: {
         title: 'Crown height',
-        desc: 'Mean height above ground of LiDAR class 5 (high vegetation) points inside each crown. Derived from point cloud heights normalised against the terrain model (MDT).',
+        desc: 'Height above ground, measured from laser scan data captured on 19/09/2024. Each tree crown is coloured by the average height of laser pulses — brighter green means taller. The ground level beneath each crown is subtracted out, so slopes don\'t distort the result.',        
         legendType: 'gradient',
         gradientColors: ['#1a2a1a', '#2d6a2d', '#70c070', '#d0ffd0'],
         gradientLabels: ['0 m', '5 m', '10 m', '14 m+']
     },
     ndvi: {
         title: 'Crown NDVI',
-        desc: 'Mean NDVI from per-point NIR and Red values recorded by the airborne LiDAR sensor. Data range: −0.10 to 0.56. Higher values indicate denser, healthier canopy.',
+        desc: 'NDVI is a vegetation index to quantify plant health — calculated from the ratio of red to near-infrared light reflected back to the laser scanner. Higher values (greener) mean denser, healthier canopy. Lower values (redder) suggest sparse, stressed, or seasonally dry vegetation. Data captured on 19/09/2024.',        
         legendType: 'gradient',
         gradientColors: ['#c85014', '#c87814', '#c0c020', '#60c020', '#206020'],
         gradientLabels: ['−0.1', '0.0', '0.15', '0.35', '0.56']
@@ -700,11 +766,11 @@ const PANEL_CONTENT = {
         title: '+ Tree tops overlay',
         desc: 'Individual tree tops detected from 3D LiDAR point cloud. Each point is the highest class 5 return within a variable-radius search cylinder (radius scales with tree height).',
         legendType: 'simple',
-        legendItems: [{ color: '#40cc40', dot: true, label: 'Detected tree top' }]
+        legendItems: [{ color: '#79c040', dot: true, label: 'Detected tree top' }]
     },
     compare: {
         title: 'Method comparison',
-        desc: 'Drag the divider to compare GMM 15-cluster (left) and UMAP+HDBSCAN 7-cluster (right). GMM provides more sub-class detail; HDBSCAN is more conservative and robust.',
+        desc: 'Drag the divider left and right to compare the two classification results across the same landscape. Left shows the 15-group statistical result; right shows the 7-group machine learning result. Color changes highlight the ambiguity of the classification results.',
         legendType: 'compare'
     }
 };
@@ -715,7 +781,7 @@ const PANEL_CONTENT = {
 
 const map = L.map('map', {
     center: [39.1968, -7.288],
-    zoom: 15,
+    zoom: 16,
     zoomControl: true,
 });
 map.createPane('left')
@@ -741,14 +807,17 @@ let crownsLayer     = null;
 let treetopsLayer   = null;
 let crownsData      = null;
 let treetopsData    = null;
-let activeMode      = 'hdbscan';
+let activeMode      = 'height';
 let treetopsVisible = false;
 let swipeControl    = null;
 let swipeLeft       = null;
 let swipeRight      = null;
 let compareActive   = false;
+let currentOpacity  = 0.78;  // matches slider default of 78
 
 const POLYGON_ZOOM  = 15;
+const POINT_ZOOM  = 18;
+
 
 // Use canvas renderer for correct colours on all browsers
 const canvasRenderer = L.canvas({ padding: 0.5 });
@@ -804,9 +873,9 @@ function buildLegend(mode) {
     }
 
     // Always show treetops legend item if active
-    if (treetopsVisible && mode !== 'treetops') {
+    if (treetopsVisible && treetopsLayer && mode !== 'treetops') {
         el.innerHTML += `<div class="legend-section">Overlay</div>`;
-        el.innerHTML += legendItem('#40cc40', 'Tree top', true);
+        el.innerHTML += legendItem('#79c040', 'Tree top', true);
     }
 }
 
@@ -845,7 +914,7 @@ function styleForMode(feature, mode) {
         fillColor = ndviColor(p.mean_ndvi);
     }
 
-    return { fillColor, fillOpacity: 0.78, color: 'rgba(255,255,255,0.12)', weight: 0.5 };
+    return { fillColor, fillOpacity: currentOpacity, color: 'rgba(255,255,255,0.12)', weight: 0.5 };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -941,7 +1010,7 @@ function makeTreetops(data) {
         pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
             renderer: canvasRenderer,
             radius: 3,
-            fillColor: '#40cc40',
+            fillColor: '#79c040',
             fillOpacity: 0.9,
             color: '#1a6a1a',
             weight: 0.8
@@ -1037,13 +1106,13 @@ function toggleTreetops() {
         treetopsVisible = false;
         btn.classList.remove('active');
     } else {
-        if (treetopsData) {
-            treetopsLayer = makeTreetops(treetopsData).addTo(map);
-        }
         treetopsVisible = true;
         btn.classList.add('active');
+        // Only actually add layer if zoom is sufficient
+        if (treetopsData && map.getZoom() >= POINT_ZOOM) {
+            treetopsLayer = makeTreetops(treetopsData).addTo(map);
+        }
     }
-    // Rebuild legend to add/remove treetop entry
     buildLegend(activeMode);
 }
 
@@ -1060,16 +1129,32 @@ function updateButtons(mode) {
 map.on('zoomend', () => {
     if (activeMode === 'compare') return;
     const zoomOk = map.getZoom() >= POLYGON_ZOOM;
+    const zoomOkTrees = map.getZoom() >= POINT_ZOOM;
 
+    // Crown polygons
     if (zoomOk && !crownsLayer && crownsData) {
         crownsLayer = makeCrowns(crownsData, activeMode, 0).addTo(map);
-        if (treetopsLayer) treetopsLayer.bringToFront();
         document.getElementById('zoom-notice').classList.remove('visible');
     } else if (!zoomOk && crownsLayer) {
         map.removeLayer(crownsLayer);
         crownsLayer = null;
         document.getElementById('zoom-notice').classList.add('visible');
     }
+
+    // Treetops zoom management
+    updateTreetopsButtonState();
+    if (zoomOkTrees) {
+        if (treetopsVisible && !treetopsLayer && treetopsData) {
+            treetopsLayer = makeTreetops(treetopsData).addTo(map);
+        }
+    } else {
+        if (treetopsLayer) {
+            map.removeLayer(treetopsLayer);
+            treetopsLayer = null;
+        }
+    }
+
+    if (treetopsLayer) treetopsLayer.bringToFront();
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -1114,9 +1199,11 @@ async function loadData() {
 
         document.getElementById('modal-overlay').style.display = 'flex';
 
-        updatePanel('gmm');
+        updatePanel('height');
+        activeMode = 'height';
+        updateButtons('height');
         if (map.getZoom() >= POLYGON_ZOOM) {
-            crownsLayer = makeCrowns(crownsData, 'gmm', 0).addTo(map);
+            crownsLayer = makeCrowns(crownsData, 'height', 0).addTo(map);
         } else {
             document.getElementById('zoom-notice').classList.add('visible');
         }
@@ -1150,7 +1237,41 @@ document.querySelectorAll('.layer-btn').forEach(btn => {
     btn.addEventListener('click', () => showLayer(btn.dataset.layer));
 });
 
+// ═══════════════════════════════════════════════════════════
+// OPACITY SLIDER
+// ═══════════════════════════════════════════════════════════
+
+document.getElementById('opacity-slider').addEventListener('input', function() {
+    currentOpacity = this.value / 100;
+    document.getElementById('opacity-value').textContent = this.value + '%';
+
+    // Apply to active crown layer
+    if (crownsLayer) {
+        crownsLayer.setStyle(f => styleForMode(f, activeMode));
+    }
+
+    // Apply to compare layers if active
+    if (swipeLeft)  swipeLeft.setStyle(f  => styleForMode(f, 'gmm'));
+    if (swipeRight) swipeRight.setStyle(f => styleForMode(f, 'hdbscan'));
+});
+
+
+// Set initial treetops button state based on starting zoom
+function updateTreetopsButtonState() {
+    const btn = document.getElementById('btn-treetops');
+    if (map.getZoom() >= POINT_ZOOM) {
+        btn.disabled = false;
+        btn.title = '+ Tree tops';
+        btn.style.opacity = '1';
+    } else {
+        btn.disabled = true;
+        btn.title = 'Zoom in to view tree tops';
+        btn.style.opacity = '0.4';
+    }
+}
+
 // ── Start ──
+updateTreetopsButtonState();
 loadData();
 </script>
 </body>
