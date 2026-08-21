@@ -27,8 +27,8 @@ Pipeline:
 
 Usage:
     python scripts/02_treetop_detection_lidar.py
-    python scripts/02_treetop_detection_lidar.py --radius 1.25 --minheight 2.0
-    python scripts/02_treetop_detection_lidar.py --radius 2.5 --minheight 3.0 --mindist 2.0
+    python scripts/02_treetop_detection_lidar.py --radius_a 1.25 --minheight 2.0
+    python scripts/02_treetop_detection_lidar.py --radius_a 2.5 --minheight 3.0 --mindist 2.0
     python scripts/02_treetop_detection_lidar.py --radius_a 1.5 --radius_b 0.1 --minheight 2.0 --mindist 2.5
 
 Arguments:
