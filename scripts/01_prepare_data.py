@@ -352,7 +352,7 @@ if __name__ == "__main__":
         logger.info("\nLocating input tiles...")
         mds_tiles = find_files(RAW_DATA_DIR, MDS_PATTERN)
         mdt_tiles = find_files(RAW_DATA_DIR, MDT_PATTERN)
-        laz_files = find_laz_files(RAW_DATA_DIR)
+        laz_files = find_laz_files(RAW_DATA_DIR, logger)
 
         # 2 Merge
         logger.info("\nMerging tiles...")
